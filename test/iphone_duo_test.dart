@@ -73,8 +73,8 @@ void main() {
   group('IPhoneDuoInfo', () {
     test('parses non-Duo and null payloads as not a Duo', () {
       expect(IPhoneDuoInfo.fromMap(null).isDuo, isFalse);
-      expect(IPhoneDuoInfo.fromMap({'isDuo': false}).posture, DuoPosture.none);
-      expect(IPhoneDuoInfo.fromMap({'isDuo': false}).foldFor(_innerPortrait), isNull);
+      expect(IPhoneDuoInfo.fromMap(const {'isDuo': false}).posture, DuoPosture.none);
+      expect(IPhoneDuoInfo.fromMap(const {'isDuo': false}).foldFor(_innerPortrait), isNull);
     });
 
     test('flat and closed reserve no fold', () {
