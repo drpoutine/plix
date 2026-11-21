@@ -130,6 +130,10 @@ class _DuoFoldBuilderState extends State<DuoFoldBuilder> {
   Size? _size;
   bool _measureScheduled = false;
 
+  // Keeps the State below the builder (scroll offsets, text fields) alive
+  // when the wrappers around it appear and disappear with the fold.
+  final GlobalKey _subtreeKey = GlobalKey();
+
   void _scheduleMeasure() {
     if (_measureScheduled) return;
     _measureScheduled = true;
@@ -160,7 +164,7 @@ class _DuoFoldBuilderState extends State<DuoFoldBuilder> {
     if (fold == null) {
       _origin = null;
       _size = null;
-      return widget.builder(context, null);
+      return KeyedSubtree(key: _subtreeKey, child: widget.builder(context, null));
     }
     // The position can change without a rebuild of this widget (a sibling
     // resizing), so it is re-measured after every build while folded.
@@ -180,7 +184,10 @@ class _DuoFoldBuilderState extends State<DuoFoldBuilder> {
     final axis = fold.axis;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final child = widget.builder(context, local);
+        final child = KeyedSubtree(
+          key: _subtreeKey,
+          child: widget.builder(context, local),
+        );
         if (axis == Axis.vertical && constraints.hasBoundedWidth) {
           return SizedBox(width: constraints.maxWidth, child: child);
         }
@@ -202,7 +209,7 @@ class _DuoFoldBuilderState extends State<DuoFoldBuilder> {
 /// When not half folded, or when the fold does not cross this widget, the
 /// child is laid out untouched. Like [DuoFoldBuilder] it fills its
 /// constraints while folded, so wrap content that already expands.
-class DuoAvoidFold extends StatelessWidget {
+class DuoAvoidFold extends StatefulWidget {
   final Widget child;
 
   /// Which side of the fold to keep the child on.
@@ -221,26 +228,58 @@ class DuoAvoidFold extends StatelessWidget {
   });
 
   @override
+  State<DuoAvoidFold> createState() => _DuoAvoidFoldState();
+}
+
+class _DuoAvoidFoldState extends State<DuoAvoidFold> {
+  // The child keeps its State while the padding around it comes and goes.
+  final GlobalKey _childKey = GlobalKey();
+
+  @override
   Widget build(BuildContext context) {
-    if (IPhoneDuoService.foldOf(context) == null) return child;
+    final child = KeyedSubtree(key: _childKey, child: widget.child);
+    final fold = IPhoneDuoService.foldOf(context);
+    if (fold == null) return child;
+    if (fold.isTabletop && !widget.avoidTabletop) return child;
+    // An enclosing DuoAvoidFold already keeps this subtree on one side of the
+    // same fold; padding again from a not-yet-updated measurement would
+    // squeeze the child for a frame.
+    final confined = _DuoConfinement.maybeOf(context);
+    if (confined == fold.axis) return child;
     return DuoFoldBuilder(
       builder: (context, fold) {
         if (fold == null || !fold.intersects) return child;
-        if (fold.isTabletop && !avoidTabletop) return child;
         final EdgeInsets padding;
         if (fold.isBook) {
-          padding = side == DuoFoldSide.leading
+          padding = widget.side == DuoFoldSide.leading
               ? EdgeInsets.only(right: fold.size.width - fold.start)
               : EdgeInsets.only(left: fold.end);
         } else {
-          padding = side == DuoFoldSide.leading
+          padding = widget.side == DuoFoldSide.leading
               ? EdgeInsets.only(bottom: fold.size.height - fold.start)
               : EdgeInsets.only(top: fold.end);
         }
-        return Padding(padding: padding, child: child);
+        return _DuoConfinement(
+          axis: fold.axis,
+          child: Padding(padding: padding, child: child),
+        );
       },
     );
   }
+}
+
+/// Marks a subtree that a [DuoAvoidFold] is confining to one side of the
+/// fold along [axis].
+class _DuoConfinement extends InheritedWidget {
+  final Axis axis;
+
+  const _DuoConfinement({required this.axis, required super.child});
+
+  static Axis? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_DuoConfinement>()?.axis;
+
+  @override
+  bool updateShouldNotify(_DuoConfinement oldWidget) => oldWidget.axis != axis;
 }
 
 /// Leading is the left half in book and the upper half in tabletop.

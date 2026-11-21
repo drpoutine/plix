@@ -35,6 +35,8 @@ Future<void> _pump(WidgetTester tester, Size size, Widget child) async {
 }
 
 void main() {
+  group('state and nesting', stateTests);
+
   setUp(IPhoneDuoService.debugReset);
   tearDown(IPhoneDuoService.debugReset);
 
@@ -316,5 +318,86 @@ void main() {
       );
       expect(tester.getRect(find.byKey(const Key('lead'))).width, 951);
     });
+  });
+}
+
+// Appended: state preservation and nesting.
+class _Counter extends StatefulWidget {
+  const _Counter();
+  @override
+  State<_Counter> createState() => _CounterState();
+}
+
+class _CounterState extends State<_Counter> {
+  static int created = 0;
+  @override
+  void initState() {
+    super.initState();
+    created++;
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox(height: 20);
+}
+
+void stateTests() {
+  setUp(IPhoneDuoService.debugReset);
+  tearDown(IPhoneDuoService.debugReset);
+
+  testWidgets('folding and unfolding keeps the State below DuoAvoidFold and DuoFoldBuilder', (tester) async {
+    _CounterState.created = 0;
+    await _pump(
+      tester,
+      _innerLandscape,
+      Scaffold(
+        body: Column(children: [
+          const DuoAvoidFold(child: _Counter()),
+          Expanded(child: DuoFoldBuilder(builder: (_, __) => const _Counter())),
+        ]),
+      ),
+    );
+    expect(_CounterState.created, 2);
+    await IPhoneDuoService.setSimulatedPosture(DuoPosture.book);
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    await IPhoneDuoService.setSimulatedPosture(DuoPosture.fullyOpen);
+    await tester.pump();
+    await tester.pump();
+    expect(_CounterState.created, 2);
+  });
+
+  testWidgets('a nested DuoAvoidFold does not pad a second time', (tester) async {
+    await IPhoneDuoService.setSimulatedPosture(DuoPosture.book);
+    await _pump(
+      tester,
+      _innerLandscape,
+      Scaffold(
+        body: Column(children: [
+          DuoAvoidFold(
+            child: Column(children: [
+              DuoAvoidFold(child: Container(height: 40, color: Colors.red, key: const Key('inner'))),
+            ]),
+          ),
+        ]),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    final rect = tester.getRect(find.byKey(const Key('inner')));
+    expect(rect.left, 0);
+    expect(rect.right, closeTo(455.5, 0.01));
+  });
+
+  testWidgets('tabletop pass-through does not stretch a title', (tester) async {
+    await IPhoneDuoService.setSimulatedPosture(DuoPosture.tabletop);
+    await _pump(
+      tester,
+      _innerPortrait,
+      Scaffold(appBar: AppBar(title: const DuoAvoidFold(child: Text('Movies', key: Key('t'))))),
+    );
+    await tester.pump();
+    expect(tester.getRect(find.byKey(const Key('t'))).height, lessThan(40));
   });
 }
