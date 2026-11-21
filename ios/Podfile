@@ -1,5 +1,4 @@
-# The iPhone Duo APIs ship in the iOS 27.1 SDK, and Xcode 27.1 does not build
-# for anything below iOS 15.
+# Uncomment this line to define a global platform for your project
 platform :ios, '15.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
@@ -41,13 +40,11 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
-    # Flutter's own pods still declare an older target; keep every pod at the
-    # app's minimum so the newer Xcode accepts them.
     target.build_configurations.each do |config|
-      current = config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'].to_s
-      if current.empty? || Gem::Version.new(current) < Gem::Version.new('15.0')
-        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
-      end
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
     end
+  end
+  installer.pods_project.build_configurations.each do |config|
+    config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
   end
 end

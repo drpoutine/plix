@@ -2,6 +2,35 @@ import Flutter
 import UIKit
 import AVFoundation
 
+@objc(SceneDelegate)
+class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+  var window: UIWindow?
+
+  func scene(
+    _ scene: UIScene,
+    willConnectTo session: UISceneSession,
+    options connectionOptions: UIScene.ConnectionOptions
+  ) {
+    guard let windowScene = scene as? UIWindowScene else { return }
+
+    DispatchQueue.main.async { [weak self] in
+      let controller = (self?.window?.rootViewController as? FlutterViewController)
+        ?? (windowScene.windows.compactMap { $0.rootViewController as? FlutterViewController }.first)
+        ?? (UIApplication.shared.windows.compactMap { $0.rootViewController as? FlutterViewController }.first)
+
+      if let controller = controller, let appDelegate = UIApplication.shared.delegate as? AppDelegate {
+        appDelegate.configureFlutterViewController(controller)
+      }
+    }
+  }
+
+  func sceneDidBecomeActive(_ scene: UIScene) {
+    if let appDelegate = UIApplication.shared.delegate as? AppDelegate {
+      appDelegate.handleOrientationOrLayoutChange()
+    }
+  }
+}
+
 @main
 @objc class AppDelegate: FlutterAppDelegate {
   private var channel: FlutterMethodChannel?
@@ -9,22 +38,42 @@ import AVFoundation
   // iPhone Duo state. See "iPhone Duo support" below.
   private var duoChannel: FlutterMethodChannel?
   private weak var duoController: FlutterViewController?
+  private weak var duoProbe: UIView?
+  private var duoHingeSeen = false
   private var duoHingeStatus = "unknown"
   private var duoHingeAngle = 0.0
   private var duoPublishScheduled = false
   private var lastDuoInfo: NSDictionary?
+  private var isConfigured = false
 
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     GeneratedPluginRegistrant.register(with: self)
-
     setupAudioSession()
 
-    guard let controller = window?.rootViewController as? FlutterViewController else {
-      return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    if let controller = window?.rootViewController as? FlutterViewController {
+      configureFlutterViewController(controller)
     }
+
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  // MARK: - UISceneSession Lifecycle
+  override func application(
+    _ application: UIApplication,
+    configurationForConnecting connectingSceneSession: UISceneSession,
+    options: UIScene.ConnectionOptions
+  ) -> UISceneConfiguration {
+    let config = UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
+    config.delegateClass = SceneDelegate.self
+    return config
+  }
+
+  func configureFlutterViewController(_ controller: FlutterViewController) {
+    guard !isConfigured else { return }
+    isConfigured = true
 
     controller.isViewOpaque = false
     controller.view.backgroundColor = .clear
@@ -37,8 +86,11 @@ import AVFoundation
     }
 
     setupDuoSupport(controller: controller)
+  }
 
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  /// Called by the scene delegate when the scene becomes active.
+  @objc func handleOrientationOrLayoutChange() {
+    scheduleDuoPublish()
   }
 
   private func setupAudioSession() {
@@ -102,7 +154,11 @@ import AVFoundation
     return identifier
   }
 
-  private lazy var isIphoneDuo: Bool = getDeviceIdentifier() == "iPhone19,4"
+  private lazy var isDuoModel: Bool = getDeviceIdentifier() == "iPhone19,4"
+
+  /// The model identifier, or the system having reported a hinge. Other
+  /// iPhone19,x models are ordinary phones, so the family prefix is not used.
+  private var isIphoneDuo: Bool { isDuoModel || duoHingeSeen }
 
   private func setupDuoSupport(controller: FlutterViewController) {
     duoController = controller
@@ -124,13 +180,56 @@ import AVFoundation
       }
     }
 
-    // Nothing below is installed on any other device.
-    guard isIphoneDuo else { return }
+    #if compiler(>=6.4)
+    if #available(iOS 27.1, *) {
+      let interaction = UIHingeInteraction { [weak self] _, update in
+        // Leave the callback before touching state that drives layout.
+        Task { @MainActor in
+          guard let self = self else { return }
+          if let hinge = update.hinge {
+            self.duoHingeSeen = true
+            switch hinge.status {
+            case .closed: self.duoHingeStatus = "closed"
+            case .partiallyOpen: self.duoHingeStatus = "partiallyOpen"
+            case .fullyOpen: self.duoHingeStatus = "fullyOpen"
+            @unknown default: self.duoHingeStatus = "unknown"
+            }
+            // Rounded to a tenth of a radian: layout follows the status, and
+            // an unrounded angle would send a message per frame while folding.
+            self.duoHingeAngle = (Double(hinge.angle) * 10.0).rounded() / 10.0
+          } else {
+            self.duoHingeStatus = "unknown"
+            self.duoHingeAngle = 0.0
+          }
+          self.installDuoLayoutProbeIfNeeded()
+          self.scheduleDuoPublish()
+        }
+      }
+      controller.view.addInteraction(interaction)
+    }
+    #endif
 
-    // Layout probe: rotation, moving between the outer and inner display and
-    // reserved-region changes all arrive as a layout pass. UIKit re-runs
-    // layout for a view that read a reserved region once that region changes,
-    // which is the only signal there is for the fold band settling.
+    installDuoLayoutProbeIfNeeded()
+
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleDuoEnvironmentChange),
+      name: UIApplication.didBecomeActiveNotification,
+      object: nil
+    )
+
+    // With the scene lifecycle this can run after Dart has already asked for
+    // the info and found no handler, so the first state is always pushed.
+    scheduleDuoPublish()
+  }
+
+  /// Layout probe, installed only on an iPhone Duo: rotation, moving between
+  /// the outer and inner display and reserved-region changes all arrive as a
+  /// layout pass. UIKit re-runs layout for a view that read a reserved region
+  /// once that region changes, which is the only signal for the fold band
+  /// settling after the hinge comes to rest.
+  private func installDuoLayoutProbeIfNeeded() {
+    guard isIphoneDuo, duoProbe == nil, let controller = duoController else { return }
     let probe = DuoLayoutProbeView(frame: controller.view.bounds)
     probe.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     probe.isUserInteractionEnabled = false
@@ -142,37 +241,7 @@ import AVFoundation
       self.scheduleDuoPublish()
     }
     controller.view.insertSubview(probe, at: 0)
-
-    #if compiler(>=6.4)
-    if #available(iOS 27.1, *) {
-      let interaction = UIHingeInteraction { [weak self] _, update in
-        guard let self = self else { return }
-        if let hinge = update.hinge {
-          switch hinge.status {
-          case .closed: self.duoHingeStatus = "closed"
-          case .partiallyOpen: self.duoHingeStatus = "partiallyOpen"
-          case .fullyOpen: self.duoHingeStatus = "fullyOpen"
-          default: self.duoHingeStatus = "unknown"
-          }
-          // Rounded to a tenth of a radian: layout follows the status, and an
-          // unrounded angle would send a message per frame while folding.
-          self.duoHingeAngle = (Double(hinge.angle) * 10.0).rounded() / 10.0
-        } else {
-          self.duoHingeStatus = "unknown"
-          self.duoHingeAngle = 0.0
-        }
-        self.scheduleDuoPublish()
-      }
-      controller.view.addInteraction(interaction)
-    }
-    #endif
-
-    NotificationCenter.default.addObserver(
-      self,
-      selector: #selector(handleDuoEnvironmentChange),
-      name: UIApplication.didBecomeActiveNotification,
-      object: nil
-    )
+    duoProbe = probe
   }
 
   @objc private func handleDuoEnvironmentChange() {
@@ -205,14 +274,19 @@ import AVFoundation
 
     // The interface orientation comes from the scene. The device orientation
     // is a quarter turn off on the inner display.
+    let windowScene = view.window?.windowScene
     var isLandscape = width > height
-    if let scene = view.window?.windowScene {
-      if #available(iOS 16.0, *) {
-        isLandscape = scene.effectiveGeometry.interfaceOrientation.isLandscape
-      } else {
-        isLandscape = scene.interfaceOrientation.isLandscape
-      }
+    #if compiler(>=6.4)
+    if #available(iOS 27.1, *), let orientation = windowScene?.effectiveGeometry.interfaceOrientation {
+      isLandscape = orientation.isLandscape
+    } else if let orientation = windowScene?.interfaceOrientation {
+      isLandscape = orientation.isLandscape
     }
+    #else
+    if let orientation = windowScene?.interfaceOrientation {
+      isLandscape = orientation.isLandscape
+    }
+    #endif
 
     // Outer display: 466 x 678 pt. Inner display: 669 x 951 pt.
     let isInnerDisplay = max(width, height) > 800 || min(width, height) > 550
@@ -235,46 +309,22 @@ import AVFoundation
     return info
   }
 
-  /// The fold band from UIKit's reserved regions (iOS 27.1), in `view`'s
-  /// coordinates, or nil when the system does not provide one.
-  ///
-  /// Resolved through the Objective-C runtime so this file builds with any
-  /// Xcode:
-  ///
-  ///   -[UIView reservedRegionsOfKind:(UIViewReservedRegionKind *)kind
-  ///                          options:(UIViewReservedRegionQueryOptions)options]
-  ///   +[UIViewReservedRegionKind divisionRegionKind]
-  ///   UIViewReservedRegion.frame
-  ///
-  /// The band is requested including inactive regions, because `isActive`
-  /// lags the hinge. Whether the fold is in effect is decided from the hinge.
+  /// The active fold band from UIKit's reserved regions (iOS 27.1), in
+  /// `view`'s coordinates, or nil when the system reports none. The region's
+  /// `isActive` lags the hinge, so the pose itself is decided from the hinge
+  /// and Dart falls back to the mid line until a region arrives.
   private func divisionRegionFrame(in view: UIView) -> CGRect? {
-    let selector = NSSelectorFromString("reservedRegionsOfKind:options:")
-    guard view.responds(to: selector),
-          let kindClass = NSClassFromString("UIViewReservedRegionKind") as? NSObject.Type
-    else { return nil }
-
-    let kindSelector = NSSelectorFromString("divisionRegionKind")
-    let kindClassObject: AnyObject = kindClass
-    guard kindClassObject.responds(to: kindSelector),
-          let kind = kindClassObject.perform(kindSelector)?.takeUnretainedValue()
-    else { return nil }
-
-    guard let implementation = view.method(for: selector) else { return nil }
-    typealias ReservedRegionsFunction =
-      @convention(c) (AnyObject, Selector, AnyObject, UInt) -> Unmanaged<AnyObject>?
-    let function = unsafeBitCast(implementation, to: ReservedRegionsFunction.self)
-    let includeInactive: UInt = 1 << 0
-    guard let regions = function(view, selector, kind, includeInactive)?.takeUnretainedValue() as? [NSObject]
-    else { return nil }
-
-    let frameSelector = NSSelectorFromString("frame")
-    for region in regions where region.responds(to: frameSelector) {
-      guard let frame = (region.value(forKey: "frame") as? NSValue)?.cgRectValue else { continue }
-      if frame.width > 0, frame.height > 0, !frame.isInfinite, !frame.isNull {
-        return frame
+    #if compiler(>=6.4)
+    if #available(iOS 27.1, *) {
+      guard view.window != nil else { return nil }
+      for region in view.reservedRegions(kind: .division) where region.isActive {
+        let frame = region.frame
+        if frame.width > 0, frame.height > 0, !frame.isInfinite, !frame.isNull {
+          return frame
+        }
       }
     }
+    #endif
     return nil
   }
 }
