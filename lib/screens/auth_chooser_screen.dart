@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../app_theme.dart';
 import '../widgets/brand_logo.dart';
+import '../widgets/duo_fold.dart';
 import '../widgets/plix_back_button.dart';
 import '../services/plex_auth_service.dart';
+import '../services/iphone_duo_service.dart';
 import '../services/plex_server_service.dart';
 import '../services/profile_service.dart';
 import 'home_screen.dart';
@@ -128,7 +130,10 @@ class _AuthChooserScreenState extends State<AuthChooserScreen> {
         backgroundColor: PlixTheme.background,
         body: Stack(
           children: [
-            Center(
+            DuoAvoidFold(
+              avoidTabletop: true,
+              side: IPhoneDuoService.isBook(context) ? DuoFoldSide.leading : DuoFoldSide.trailing,
+              child: Center(
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                 padding: EdgeInsets.symmetric(horizontal: isCompact ? 16 : 40, vertical: isCompact ? 20 : 30),
@@ -201,6 +206,7 @@ class _AuthChooserScreenState extends State<AuthChooserScreen> {
                   ],
                 ),
               ),
+            ),
             ),
             if (widget.isCreatingProfile)
               Positioned(

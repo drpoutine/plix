@@ -27,6 +27,8 @@ import 'person_screen.dart';
 import 'player_screen.dart';
 import '../widgets/download_button.dart';
 import '../services/download_service.dart';
+import '../services/iphone_duo_service.dart';
+import '../widgets/duo_fold.dart';
 
 bool _isLocalPath(String? p) {
   if (p == null || p.isEmpty) return false;
@@ -93,6 +95,8 @@ class _DetailsScreenState extends State<DetailsScreen> with WidgetsBindingObserv
   final ScrollController _scrollController = ScrollController();
   final ScrollController _seasonsScrollController = ScrollController();
   final GlobalKey _actionRowKey = GlobalKey();
+  final GlobalKey _heroGapKey = GlobalKey();
+  double? _heroGapRestTop;
   final Map<String, FocusNode> _seasonFocusNodes = {};
   final Map<String, FocusNode> _episodeFocusNodes = {};
   String? _lastPlayedEpisodeKey;
@@ -700,6 +704,7 @@ class _DetailsScreenState extends State<DetailsScreen> with WidgetsBindingObserv
 
     showDialog(
       context: context,
+      anchorPoint: IPhoneDuoService.isTabletop(context) ? IPhoneDuoService.sheetAnchor : null,
       builder: (ctx) {
         return Dialog(
           backgroundColor: Colors.transparent,
@@ -1214,6 +1219,15 @@ class _DetailsScreenState extends State<DetailsScreen> with WidgetsBindingObserv
     }
   }
 
+  // Book: a centred toast would straddle the spine, so it is held on the
+  // left half instead.
+  EdgeInsets? get _bookToastMargin {
+    if (!mounted) return null;
+    final fold = IPhoneDuoService.foldOf(context);
+    if (fold == null || !fold.isBook) return null;
+    return EdgeInsets.fromLTRB(15, 5, MediaQuery.sizeOf(context).width - fold.start + 15, 10);
+  }
+
   void _showToast(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).removeCurrentSnackBar();
@@ -1226,7 +1240,8 @@ class _DetailsScreenState extends State<DetailsScreen> with WidgetsBindingObserv
         ),
         duration: const Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
-        width: (message.length * 9.0).clamp(240.0, 420.0),
+        width: _bookToastMargin == null ? (message.length * 9.0).clamp(240.0, 420.0) : null,
+        margin: _bookToastMargin,
         backgroundColor: Colors.black.withOpacity(0.85),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
@@ -1634,6 +1649,39 @@ class _DetailsScreenState extends State<DetailsScreen> with WidgetsBindingObserv
     );
   }
 
+  /// The gap between the artwork and the title of the compact layout.
+  ///
+  /// Tabletop: the gap grows so that the title and the controls under it
+  /// start on the lower half, leaving the artwork on the upper half. Without
+  /// this the title or the buttons rest right on the fold.
+  Widget _buildHeroGap(BuildContext context, double gap) {
+    final fold = IPhoneDuoService.foldOf(context);
+    if (fold != null && fold.isTabletop) {
+      _measureHeroGapRestTop();
+      final restTop = _heroGapRestTop;
+      if (restTop != null && fold.end - restTop > gap) {
+        gap = fold.end - restTop;
+      }
+    }
+    return SizedBox(key: _heroGapKey, height: gap);
+  }
+
+  /// Records where the hero gap starts when the page is scrolled to the top,
+  /// in view coordinates.
+  void _measureHeroGapRestTop() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final box = _heroGapKey.currentContext?.findRenderObject();
+      if (box is! RenderBox || !box.hasSize) return;
+      final scrolled = _scrollController.hasClients ? _scrollController.offset : 0.0;
+      final top = box.localToGlobal(Offset.zero).dy + scrolled;
+      final known = _heroGapRestTop;
+      if (known == null || (top - known).abs() > 0.5) {
+        setState(() => _heroGapRestTop = top);
+      }
+    });
+  }
+
   Widget _buildMobileOverview(
     BuildContext context,
     String posterUrl,
@@ -1663,7 +1711,7 @@ class _DetailsScreenState extends State<DetailsScreen> with WidgetsBindingObserv
               decodeHeight: artworkDecodeHeight,
             ),
           ),
-          const SizedBox(height: 18),
+          _buildHeroGap(context, 18),
         ] else ...[
           // Movies: Remove poster, background fanart provides visual flair
           // Shift scrollable content down so middle of the logo art is in the middle of the screen
@@ -1675,7 +1723,7 @@ class _DetailsScreenState extends State<DetailsScreen> with WidgetsBindingObserv
               final topShift = isPortrait
                   ? ((screenHeight * 0.42) - 58.0).clamp(160.0, 550.0)
                   : 32.0;
-              return SizedBox(height: topShift);
+              return _buildHeroGap(ctx, topShift);
             },
           ),
         ],
@@ -2233,32 +2281,48 @@ class _DetailsScreenState extends State<DetailsScreen> with WidgetsBindingObserv
                             artworkDecodeHeight,
                           )
                         else
-                          Row(
+                          DuoFoldBuilder(
+                            builder: (context, fold) {
+                          // Book: artwork (and the episode buttons under it) on the
+                          // left page, title and actions on the right page, nothing
+                          // in the spine.
+                          final spine =
+                              (fold != null && fold.isBook && fold.intersects && fold.start >= artworkWidth) ? fold : null;
+                          final artWidth = (spine != null && _item.isEpisode) ? spine.start : artworkWidth;
+                          final artHeight = artWidth / _artworkAspectRatio;
+                          return Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               // Left column: Artwork + (if episode, action buttons underneath)
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                              SizedBox(
+                                width: spine?.start,
+                                child: Column(
+                                crossAxisAlignment: spine != null ? CrossAxisAlignment.center : CrossAxisAlignment.start,
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   _buildArtwork(
                                     posterUrl: posterUrl,
-                                    width: artworkWidth,
-                                    height: artworkHeight,
-                                    decodeWidth: artworkDecodeWidth,
-                                    decodeHeight: artworkDecodeHeight,
+                                    width: artWidth,
+                                    height: artHeight,
+                                    decodeWidth: artWidth == artworkWidth
+                                        ? artworkDecodeWidth
+                                        : PlixImageCache.decodeWidth(context, artWidth, cap: 960),
+                                    decodeHeight: artWidth == artworkWidth
+                                        ? artworkDecodeHeight
+                                        : PlixImageCache.decodeHeight(context, artHeight, cap: _isEpisode4by3 ? 720 : 540),
                                   ),
                                   if (!isTv && _item.isEpisode) ...[
                                     const SizedBox(height: 14),
                                     SizedBox(
-                                      width: artworkWidth,
+                                      width: artWidth,
                                       child: _buildLandscapeEpisodeButtons(),
                                     ),
                                   ],
                                 ],
                               ),
+                              ),
 
-                              const SizedBox(width: 36),
+                              SizedBox(width: spine != null ? spine.end - spine.start : 36),
 
                               // Details & Action Buttons
                               Expanded(
@@ -2326,7 +2390,13 @@ class _DetailsScreenState extends State<DetailsScreen> with WidgetsBindingObserv
                                           child: FittedBox(
                                             fit: BoxFit.scaleDown,
                                             alignment: Alignment.centerLeft,
-                                            child: Wrap(
+                                            // Book: wrap within the right page rather than
+                                            // shrinking the buttons to fit one line.
+                                            child: ConstrainedBox(
+                                              constraints: BoxConstraints(
+                                                maxWidth: spine != null ? spine.size.width - spine.end : double.infinity,
+                                              ),
+                                              child: Wrap(
                                               spacing: 10,
                                               runSpacing: 10,
                                               children: [
@@ -2409,7 +2479,8 @@ class _DetailsScreenState extends State<DetailsScreen> with WidgetsBindingObserv
                                                         ),
                                                         duration: const Duration(seconds: 3),
                                                         behavior: SnackBarBehavior.floating,
-                                                        width: 340,
+                                                        width: _bookToastMargin == null ? 340 : null,
+                                                        margin: _bookToastMargin,
                                                         backgroundColor: PlixTheme.surface,
                                                         shape: RoundedRectangleBorder(
                                                           borderRadius: BorderRadius.circular(10),
@@ -2510,6 +2581,7 @@ class _DetailsScreenState extends State<DetailsScreen> with WidgetsBindingObserv
                                               IntrinsicWidth(child: button),
                                               ],
                                             ),
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -2582,6 +2654,8 @@ class _DetailsScreenState extends State<DetailsScreen> with WidgetsBindingObserv
                                 ),
                               ),
                             ],
+                          );
+                            },
                           ),
 
                   // Cast & Crew (movies and episodes). Shows have their own

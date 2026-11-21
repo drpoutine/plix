@@ -41,6 +41,22 @@ import '../services/update_service.dart';
 import '../services/theme_music_service.dart';
 import '../widgets/brand_logo.dart';
 import '../widgets/plix_bottom_nav.dart';
+import '../services/iphone_duo_service.dart';
+import '../widgets/duo_fold.dart';
+
+/// Content a [HomeScreen] shows as-is instead of loading it from a server.
+@visibleForTesting
+class HomeDebugContent {
+  final List<PlexLibrary> libraries;
+  final List<PlexMediaItem> continueWatching;
+  final Map<String, List<PlexMediaItem>> recentlyAdded;
+
+  const HomeDebugContent({
+    this.libraries = const [],
+    this.continueWatching = const [],
+    this.recentlyAdded = const {},
+  });
+}
 
 class HomeScreen extends StatefulWidget {
   final PlexServer server;
@@ -48,12 +64,16 @@ class HomeScreen extends StatefulWidget {
   final PlexServerService serverService;
   final bool isOfflineInitial;
 
+  @visibleForTesting
+  final HomeDebugContent? debugContent;
+
   const HomeScreen({
     super.key,
     required this.server,
     required this.authService,
     required this.serverService,
     this.isOfflineInitial = false,
+    this.debugContent,
   });
 
   static void clearMemoryCaches() {
@@ -337,7 +357,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     GuestModeService.instance.isGuestModeNotifier.addListener(_onGuestModeChanged);
     GuestModeService.instance.guestContinueWatchingNotifier.addListener(_onGuestContinueWatchingChanged);
 
-    if (widget.isOfflineInitial) {
+    final debugContent = widget.debugContent;
+    if (debugContent != null) {
+      _libraries = List.of(debugContent.libraries);
+      _continueWatching = List.of(debugContent.continueWatching);
+      _recentlyAddedByLibrary.addAll(debugContent.recentlyAdded);
+      _heroItem = _continueWatching.firstOrNull ??
+          debugContent.recentlyAdded.values.expand((items) => items).firstOrNull;
+      _isLoading = false;
+    } else if (widget.isOfflineInitial) {
       _isOffline = true;
       _errorMessage = 'You are offline';
       _isLoading = false;
@@ -2318,6 +2346,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
+  // The loading and error states sit dead centre, which is where the fold is:
+  // left of the spine in book, the stable lower half in tabletop.
+  Widget _keepStatusOffFold(Widget child) {
+    return DuoAvoidFold(
+      avoidTabletop: true,
+      side: IPhoneDuoService.isTabletop(context) ? DuoFoldSide.trailing : DuoFoldSide.leading,
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isCompact = PlixDeviceHelper.isCompact(context);
@@ -2404,13 +2442,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
                   // Scrollable Rows
                   if (_isLoading)
-                    Center(
+                    _keepStatusOffFold(Center(
                       child: CircularProgressIndicator(
                         valueColor: AlwaysStoppedAnimation<Color>(PlixTheme.plexGold),
                       ),
-                    )
+                    ))
                   else if (_errorMessage != null)
-                    Center(
+                    _keepStatusOffFold(Center(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 24),
                         child: Column(
@@ -2484,7 +2522,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           ],
                         ),
                       ),
-                    )
+                    ))
                   else if (isCompact)
                     RefreshIndicator(
                       onRefresh: _initData,
@@ -2511,7 +2549,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (_heroItem != null || _heroViewMoreTitle != null) ...[
-                          _buildTvHero(),
+                          DuoAvoidFold(child: _buildTvHero()),
                           Container(
                             height: 1,
                             margin: const EdgeInsets.only(left: 40, right: 40, top: 8, bottom: 4),
@@ -2928,30 +2966,32 @@ class _HomeRowSectionState extends State<_HomeRowSection> {
                   Icon(widget.icon, color: PlixTheme.plexGold, size: isCompact ? 18 : 18),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: widget.title,
-                            style: TextStyle(
-                              color: PlixTheme.textPrimary,
-                              fontSize: isCompact ? 16 : 17,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          if (widget.serverName != null && widget.serverName!.isNotEmpty)
+                    child: DuoAvoidFold(
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
                             TextSpan(
-                              text: ' (${widget.serverName})',
+                              text: widget.title,
                               style: TextStyle(
-                                color: PlixTheme.textSecondary,
-                                fontSize: isCompact ? 12 : 14,
-                                fontWeight: FontWeight.normal,
+                                color: PlixTheme.textPrimary,
+                                fontSize: isCompact ? 16 : 17,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                        ],
+                            if (widget.serverName != null && widget.serverName!.isNotEmpty)
+                              TextSpan(
+                                text: ' (${widget.serverName})',
+                                style: TextStyle(
+                                  color: PlixTheme.textSecondary,
+                                  fontSize: isCompact ? 12 : 14,
+                                  fontWeight: FontWeight.normal,
+                                ),
+                              ),
+                          ],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   if (hasViewMore) ...[

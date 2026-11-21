@@ -12,6 +12,7 @@ import '../app_theme.dart';
 import '../models/plex_library.dart';
 import '../models/plex_server.dart';
 import '../services/plix_device_helper.dart';
+import '../services/iphone_duo_service.dart';
 
 enum NavDestination {
   home,
@@ -527,6 +528,18 @@ class _SidebarNavState extends State<SidebarNav> {
   }
 
   void _showOfflineToast(String serverName) {
+    const toastWidth = 280.0;
+    // Centred, the toast would sit on the book spine; centre it in the left half.
+    EdgeInsets? spineMargin;
+    final fold = IPhoneDuoService.foldOf(context);
+    if (fold != null && fold.isBook && fold.start >= toastWidth) {
+      final left = (fold.start - toastWidth) / 2;
+      spineMargin = EdgeInsets.only(
+        left: left,
+        right: MediaQuery.sizeOf(context).width - left - toastWidth,
+        bottom: 10,
+      );
+    }
     ScaffoldMessenger.of(context).removeCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -541,7 +554,8 @@ class _SidebarNavState extends State<SidebarNav> {
         ),
         duration: const Duration(seconds: 2),
         behavior: SnackBarBehavior.floating,
-        width: 280,
+        width: spineMargin == null ? toastWidth : null,
+        margin: spineMargin,
         backgroundColor: Colors.black.withOpacity(0.9),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),

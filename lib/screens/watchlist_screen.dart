@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:flutter/rendering.dart';
+
 import 'package:flutter/services.dart';
 
 import '../app_theme.dart';
@@ -27,6 +29,10 @@ import 'details_screen.dart';
 import '../services/plix_device_helper.dart';
 
 import '../widgets/plix_bottom_nav.dart';
+
+import '../services/iphone_duo_service.dart';
+
+import '../widgets/duo_fold.dart';
 
 
 
@@ -152,11 +158,55 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
 
 
 
+  // In book posture the columns are split around the spine, so the first
+
+  // row is read from the live grid layout instead of the formula above.
+
+  int? _spineFirstRowCount(int index) {
+
+    final sliver = _focusNodes[index]?.context?.findAncestorRenderObjectOfType<RenderSliverGrid>();
+
+    final delegate = sliver?.gridDelegate;
+
+    if (sliver == null || delegate is! DuoSpineGridDelegate || delegate.fold == null) return null;
+
+    final layout = delegate.getLayout(sliver.constraints);
+
+    var count = 0;
+
+    while (count < _items.length && layout.getGeometryForChildIndex(count).scrollOffset <= 0) {
+
+      count++;
+
+    }
+
+    return count;
+
+  }
+
+
+
+  Widget _awayFromFold(Widget child) {
+
+    return DuoAvoidFold(
+
+      side: IPhoneDuoService.isTabletop(context) ? DuoFoldSide.trailing : DuoFoldSide.leading,
+
+      avoidTabletop: true,
+
+      child: child,
+
+    );
+
+  }
+
+
+
   void _handleItemFocus(int index, bool isCompact) {
 
     if (isCompact) return;
 
-    if (index < _firstRowItemCount(isCompact)) {
+    if (index < (_spineFirstRowCount(index) ?? _firstRowItemCount(isCompact))) {
 
       void scrollToTop() {
 
@@ -694,7 +744,7 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
 
                 child: _isLoading
 
-                    ? Center(
+                    ? _awayFromFold(Center(
 
                         child: CircularProgressIndicator(
 
@@ -702,11 +752,11 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
 
                         ),
 
-                      )
+                      ))
 
                     : _errorMessage != null
 
-                        ? Center(
+                        ? _awayFromFold(Center(
 
                             child: Column(
 
@@ -742,11 +792,11 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
 
                             ),
 
-                          )
+                          ))
 
                         : _items.isEmpty
 
-                            ? Center(
+                            ? _awayFromFold(Center(
 
                                 child: Padding(
 
@@ -798,13 +848,15 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
 
                                 ),
 
-                              )
+                              ))
 
                             : Padding(
 
                                 padding: EdgeInsets.only(top: isCompact ? 88 : 102),
 
-                                child: GridView.builder(
+                                child: DuoFoldBuilder(
+
+                                builder: (context, fold) => GridView.builder(
 
                                 controller: _gridScrollController,
 
@@ -828,7 +880,13 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
 
                                 ),
 
-                                gridDelegate: isCompact
+                                gridDelegate: DuoSpineGridDelegate(
+
+                                  fold: fold,
+
+                                  crossAxisInset: isCompact ? 14 : 32,
+
+                                  base: isCompact
 
                               ? SliverGridDelegateWithFixedCrossAxisCount(
 
@@ -853,6 +911,8 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                         mainAxisSpacing: 18,
 
                                       ),
+
+                                ),
 
                                 addAutomaticKeepAlives: false,
                                 itemCount: _items.length,
@@ -906,6 +966,8 @@ class _WatchlistScreenState extends State<WatchlistScreen> {
                                   );
 
                                 },
+
+                              ),
 
                               ),
 

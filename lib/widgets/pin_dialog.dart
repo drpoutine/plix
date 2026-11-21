@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../app_theme.dart';
 import '../models/plix_profile.dart';
+import '../services/iphone_duo_service.dart';
 import '../services/plix_device_helper.dart';
 import 'profile_avatar_widget.dart';
 
@@ -351,6 +352,59 @@ class PinKeypadWidget extends StatelessWidget {
   }
 }
 
+const double _pinDialogTabletopWidth = 520;
+
+/// Half folded, the PIN pad goes with the app's content: the stable lower half
+/// in tabletop. Everywhere else the route keeps Flutter's default placement.
+Offset? _pinDialogAnchor(BuildContext context) =>
+    IPhoneDuoService.foldOf(context) != null ? IPhoneDuoService.sheetAnchor : null;
+
+/// Shrinks the dialog when one half of a half-folded iPhone Duo is smaller
+/// than it (safe areas); a no-op everywhere else.
+class _PinDialogFit extends StatelessWidget {
+  final Widget child;
+
+  const _PinDialogFit({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    if (IPhoneDuoService.foldOf(context) == null) return child;
+    return FittedBox(fit: BoxFit.scaleDown, child: child);
+  }
+}
+
+/// The dialog's content: stacked, except in tabletop where one half is too
+/// short for the stack and the keypad sits beside the header instead.
+class _PinDialogBody extends StatelessWidget {
+  final List<Widget> header;
+  final List<Widget> keypad;
+
+  const _PinDialogBody({required this.header, required this.keypad});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!IPhoneDuoService.isTabletop(context)) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ...header,
+          const SizedBox(height: 18),
+          ...keypad,
+        ],
+      );
+    }
+    return Row(
+      children: [
+        Expanded(
+          child: Column(mainAxisSize: MainAxisSize.min, children: header),
+        ),
+        const SizedBox(width: 24),
+        Column(mainAxisSize: MainAxisSize.min, children: keypad),
+      ],
+    );
+  }
+}
+
 class PinDialog extends StatefulWidget {
   final PlixProfile profile;
 
@@ -361,6 +415,7 @@ class PinDialog extends StatefulWidget {
       context: context,
       barrierDismissible: true,
       barrierColor: Colors.black.withOpacity(0.85),
+      anchorPoint: _pinDialogAnchor(context),
       builder: (_) => PinDialog(profile: profile),
     );
     return result ?? false;
@@ -433,13 +488,14 @@ class _PinDialogState extends State<PinDialog> {
       backgroundColor: Colors.transparent,
       elevation: 0,
       child: Center(
-        child: Focus(
+        child: _PinDialogFit(
+          child: Focus(
           onKeyEvent: (node, event) {
             final handled = handlePinKeyEvent(event, _onDigitPressed, _onBackspace);
             return handled ? KeyEventResult.handled : KeyEventResult.ignored;
           },
           child: Container(
-            width: 360,
+            width: IPhoneDuoService.isTabletop(context) ? _pinDialogTabletopWidth : 360,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
             decoration: BoxDecoration(
               color: PlixTheme.surface,
@@ -453,9 +509,8 @@ class _PinDialogState extends State<PinDialog> {
                 ),
               ],
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
+            child: _PinDialogBody(
+              header: [
                 ProfileAvatarWidget(
                   avatarId: widget.profile.avatarId,
                   avatarColorId: widget.profile.avatarColorId,
@@ -501,8 +556,8 @@ class _PinDialogState extends State<PinDialog> {
                   ),
                 ],
 
-                const SizedBox(height: 18),
-
+              ],
+              keypad: [
                 // Numeric Keypad
                 PinKeypadWidget(
                   focusNodes: _numFocusNodes,
@@ -556,6 +611,7 @@ class _PinDialogState extends State<PinDialog> {
               ],
             ),
           ),
+          ),
         ),
       ),
     );
@@ -581,6 +637,7 @@ class PinSetupDialog extends StatefulWidget {
       context: context,
       barrierDismissible: true,
       barrierColor: Colors.black.withOpacity(0.85),
+      anchorPoint: _pinDialogAnchor(context),
       builder: (_) => PinSetupDialog(title: title, subtitle: subtitle),
     );
     return result;
@@ -639,13 +696,14 @@ class _PinSetupDialogState extends State<PinSetupDialog> {
       backgroundColor: Colors.transparent,
       elevation: 0,
       child: Center(
-        child: Focus(
+        child: _PinDialogFit(
+          child: Focus(
           onKeyEvent: (node, event) {
             final handled = handlePinKeyEvent(event, _onDigitPressed, _onBackspace);
             return handled ? KeyEventResult.handled : KeyEventResult.ignored;
           },
           child: Container(
-            width: 360,
+            width: IPhoneDuoService.isTabletop(context) ? _pinDialogTabletopWidth : 360,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
             decoration: BoxDecoration(
               color: PlixTheme.surface,
@@ -659,9 +717,8 @@ class _PinSetupDialogState extends State<PinSetupDialog> {
                 ),
               ],
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
+            child: _PinDialogBody(
+              header: [
                 Container(
                   width: 58,
                   height: 58,
@@ -697,8 +754,8 @@ class _PinSetupDialogState extends State<PinSetupDialog> {
                   pinLength: _enteredPin.length,
                 ),
 
-                const SizedBox(height: 18),
-
+              ],
+              keypad: [
                 // Numeric Keypad
                 PinKeypadWidget(
                   focusNodes: _numFocusNodes,
@@ -751,6 +808,7 @@ class _PinSetupDialogState extends State<PinSetupDialog> {
                 ),
               ],
             ),
+          ),
           ),
         ),
       ),

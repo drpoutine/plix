@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../app_theme.dart';
 import '../services/plix_device_helper.dart';
+import '../services/iphone_duo_service.dart';
+import 'duo_fold.dart';
 
 /// Dedicated Interactive Hero Tile that leads to AppearanceScreen
 class AppearanceHeroTile extends StatefulWidget {
@@ -64,7 +66,10 @@ class _AppearanceHeroTileState extends State<AppearanceHeroTile> {
     final accent = PlixTheme.plexGold;
     final isGlass = preset.isGlass;
 
-    return Focus(
+    // The whole tile is one tap target: half folded on its side it stays on
+    // one half instead of straddling the spine.
+    return DuoAvoidFold(
+      child: Focus(
       focusNode: widget.focusNode,
       onKeyEvent: (node, event) {
         if (event is KeyDownEvent || event is KeyRepeatEvent) {
@@ -143,7 +148,7 @@ class _AppearanceHeroTileState extends State<AppearanceHeroTile> {
               if (isGlass) PlixTheme.buildGlassReflectionLayer(borderRadius: BorderRadius.circular(14)),
               Builder(
                 builder: (context) {
-                  final isCompact = PlixDeviceHelper.isCompact(context) || MediaQuery.of(context).size.width < 650;
+                  final isCompact = PlixDeviceHelper.isCompact(context) || MediaQuery.of(context).size.width < 650 || IPhoneDuoService.isBook(context);
                   if (isCompact) {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -373,6 +378,7 @@ class _AppearanceHeroTileState extends State<AppearanceHeroTile> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

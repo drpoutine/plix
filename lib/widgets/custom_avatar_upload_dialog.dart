@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../app_theme.dart';
 import '../models/plix_profile.dart';
 import '../services/custom_avatar_service.dart';
+import '../services/iphone_duo_service.dart';
 import 'plix_tv_text_field.dart';
 
 class CustomAvatarUploadDialog extends StatefulWidget {
@@ -141,7 +142,7 @@ class _CustomAvatarUploadDialogState extends State<CustomAvatarUploadDialog> {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final isKeyboardOpen = bottomInset > 0 || _urlFocusNode.hasFocus;
 
-    return Dialog(
+    final dialog = Dialog(
       backgroundColor: Colors.transparent,
       elevation: 0,
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -568,5 +569,11 @@ class _CustomAvatarUploadDialogState extends State<CustomAvatarUploadDialog> {
       ),
     ),
   );
+    // In tabletop the dialog sits on the upper half and the keyboard on the
+    // lower one, so the keyboard must not squeeze it.
+    if (IPhoneDuoService.isTabletop(context)) {
+      return MediaQuery.removeViewInsets(context: context, removeBottom: true, child: dialog);
+    }
+    return dialog;
 }
 }

@@ -7,10 +7,12 @@ import '../app_theme.dart';
 import '../models/plex_server.dart';
 import '../services/jellyfin_auth_service.dart';
 import '../services/plex_auth_service.dart';
+import '../services/iphone_duo_service.dart';
 import '../services/plex_server_service.dart';
 import '../services/plix_device_helper.dart';
 import '../services/update_service.dart';
 import '../widgets/brand_logo.dart';
+import '../widgets/duo_fold.dart';
 import '../widgets/plix_back_button.dart';
 import '../widgets/plix_home_button.dart';
 import '../widgets/plix_tv_text_field.dart';
@@ -44,6 +46,8 @@ class _JellyfinConnectScreenState extends State<JellyfinConnectScreen> {
   final FocusNode _cancelBtnFocusNode = FocusNode();
   final FocusNode _backBtnFocusNode = FocusNode();
   final FocusNode _homeBtnFocusNode = FocusNode();
+  // Keeps the form (and its keyboard connection) alive when the hinge moves.
+  final GlobalKey _formKey = GlobalKey();
 
   bool _isStep2QuickConnect = false;
   bool _isLoading = false;
@@ -264,9 +268,14 @@ class _JellyfinConnectScreenState extends State<JellyfinConnectScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isCompact = PlixDeviceHelper.isCompact(context);
+    // In book the screen is confined to one half, which is phone-width.
+    final isCompact = PlixDeviceHelper.isCompact(context) || IPhoneDuoService.isBook(context);
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final isKeyboardOpen = bottomInset > 0;
+    // In tabletop the keyboard takes the lower half, so the form moves up.
+    final duoSide = IPhoneDuoService.isBook(context) || isKeyboardOpen
+        ? DuoFoldSide.leading
+        : DuoFoldSide.trailing;
 
     return Scaffold(
       backgroundColor: PlixTheme.background,
@@ -299,11 +308,16 @@ class _JellyfinConnectScreenState extends State<JellyfinConnectScreen> {
                 ),
               ),
             ),
-            Center(
+            DuoAvoidFold(
+              avoidTabletop: true,
+              side: duoSide,
+              child: Center(
+              key: _formKey,
               child: AnimatedPadding(
                 duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOutCubic,
-                padding: EdgeInsets.only(bottom: isKeyboardOpen ? (bottomInset * 0.4) : 0),
+                padding: EdgeInsets.only(
+                    bottom: isKeyboardOpen && !IPhoneDuoService.isTabletop(context) ? (bottomInset * 0.4) : 0),
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                   padding: EdgeInsets.only(
@@ -320,6 +334,7 @@ class _JellyfinConnectScreenState extends State<JellyfinConnectScreen> {
                   ),
                 ),
               ),
+            ),
             ),
           ],
         ),

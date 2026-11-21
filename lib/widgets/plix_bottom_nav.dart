@@ -7,6 +7,7 @@ import '../services/plex_auth_service.dart';
 import '../services/plex_media_service.dart';
 import '../services/plex_server_service.dart';
 import '../services/plix_device_helper.dart';
+import '../services/iphone_duo_service.dart';
 import '../screens/library_screen.dart';
 import '../screens/search_screen.dart';
 import '../screens/settings_screen.dart';
@@ -110,6 +111,7 @@ class PlixBottomNav extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      anchorPoint: IPhoneDuoService.sheetAnchor,
       backgroundColor: PlixTheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),

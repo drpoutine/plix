@@ -3,6 +3,7 @@ import '../app_theme.dart';
 import '../models/plex_media_item.dart';
 import '../models/plex_server.dart';
 import '../services/download_service.dart';
+import '../services/iphone_duo_service.dart';
 import '../services/plix_device_helper.dart';
 import '../services/plex_media_service.dart';
 import 'plix_button.dart';
@@ -127,6 +128,13 @@ class _DownloadButtonState extends State<DownloadButton> {
     }
   }
 
+  // Book: keeps the snack bar text on the left half, clear of the spine.
+  EdgeInsets? get _bookSnackMargin {
+    final fold = IPhoneDuoService.foldOf(context);
+    if (fold == null || !fold.isBook) return null;
+    return EdgeInsets.fromLTRB(15, 5, MediaQuery.sizeOf(context).width - fold.start + 15, 10);
+  }
+
   Future<void> _startDownload() async {
     final item = widget.item;
     final server = widget.server;
@@ -152,9 +160,10 @@ class _DownloadButtonState extends State<DownloadButton> {
 
     if (downloadUrl == null || downloadUrl.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Download URL unavailable for this media file.'),
+        SnackBar(
+          content: const Text('Download URL unavailable for this media file.'),
           behavior: SnackBarBehavior.floating,
+          margin: _bookSnackMargin,
         ),
       );
       return;
@@ -202,6 +211,7 @@ class _DownloadButtonState extends State<DownloadButton> {
         SnackBar(
           content: Text('Downloading "${item.title}"...'),
           behavior: SnackBarBehavior.floating,
+          margin: _bookSnackMargin,
           duration: const Duration(seconds: 2),
         ),
       );
@@ -211,6 +221,7 @@ class _DownloadButtonState extends State<DownloadButton> {
   Future<void> _confirmDelete() async {
     final confirmed = await showDialog<bool>(
       context: context,
+      anchorPoint: IPhoneDuoService.isTabletop(context) ? IPhoneDuoService.sheetAnchor : null,
       builder: (ctx) => AlertDialog(
         backgroundColor: PlixTheme.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -236,10 +247,11 @@ class _DownloadButtonState extends State<DownloadButton> {
       await DownloadService.instance.deleteDownload(widget.item.ratingKey);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Download deleted.'),
+          SnackBar(
+            content: const Text('Download deleted.'),
             behavior: SnackBarBehavior.floating,
-            duration: Duration(seconds: 2),
+            margin: _bookSnackMargin,
+            duration: const Duration(seconds: 2),
           ),
         );
       }
@@ -249,6 +261,7 @@ class _DownloadButtonState extends State<DownloadButton> {
   Future<void> _confirmCancel() async {
     final confirmed = await showDialog<bool>(
       context: context,
+      anchorPoint: IPhoneDuoService.isTabletop(context) ? IPhoneDuoService.sheetAnchor : null,
       builder: (ctx) => AlertDialog(
         backgroundColor: PlixTheme.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),

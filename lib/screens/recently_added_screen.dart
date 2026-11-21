@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import '../app_theme.dart';
 import '../models/plex_library.dart';
 import '../models/plex_media_item.dart';
@@ -12,6 +13,8 @@ import 'details_screen.dart';
 import '../services/plix_device_helper.dart';
 import '../widgets/plix_bottom_nav.dart';
 import '../services/plix_image_cache.dart';
+import '../services/iphone_duo_service.dart';
+import '../widgets/duo_fold.dart';
 
 class RecentlyAddedScreen extends StatefulWidget {
   final PlexLibrary library;
@@ -70,9 +73,31 @@ class _RecentlyAddedScreenState extends State<RecentlyAddedScreen> {
     return (available / (165 + 16)).ceil();
   }
 
+  // In book posture the columns are split around the spine, so the first
+  // row is read from the live grid layout instead of the formula above.
+  int? _spineFirstRowCount(int index) {
+    final sliver = _focusNodes[index]?.context?.findAncestorRenderObjectOfType<RenderSliverGrid>();
+    final delegate = sliver?.gridDelegate;
+    if (sliver == null || delegate is! DuoSpineGridDelegate || delegate.fold == null) return null;
+    final layout = delegate.getLayout(sliver.constraints);
+    var count = 0;
+    while (count < _items.length && layout.getGeometryForChildIndex(count).scrollOffset <= 0) {
+      count++;
+    }
+    return count;
+  }
+
+  Widget _awayFromFold(Widget child) {
+    return DuoAvoidFold(
+      side: IPhoneDuoService.isTabletop(context) ? DuoFoldSide.trailing : DuoFoldSide.leading,
+      avoidTabletop: true,
+      child: child,
+    );
+  }
+
   void _handleItemFocus(int index, bool isCompact) {
     if (isCompact) return;
-    if (index < _firstRowItemCount(isCompact)) {
+    if (index < (_spineFirstRowCount(index) ?? _firstRowItemCount(isCompact))) {
       void scrollToTop() {
         if (!mounted || !_gridScrollController.hasClients) return;
         if (!(_focusNodes[index]?.hasFocus ?? false)) return;
@@ -238,13 +263,13 @@ class _RecentlyAddedScreenState extends State<RecentlyAddedScreen> {
             // Content Grid
             Positioned.fill(
               child: _isLoading
-                  ? Center(
+                  ? _awayFromFold(Center(
                       child: CircularProgressIndicator(
                         valueColor: AlwaysStoppedAnimation<Color>(PlixTheme.plexGold),
                       ),
-                    )
+                    ))
                   : _errorMessage != null
-                      ? Center(
+                      ? _awayFromFold(Center(
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -262,17 +287,18 @@ class _RecentlyAddedScreenState extends State<RecentlyAddedScreen> {
                               ),
                             ],
                           ),
-                        )
+                        ))
                       : _items.isEmpty
-                          ? const Center(
+                          ? _awayFromFold(const Center(
                               child: Text(
                                 'No recently added items found.',
                                 style: TextStyle(color: PlixTheme.textSecondary, fontSize: 16),
                               ),
-                            )
+                            ))
                           : Padding(
                               padding: EdgeInsets.only(top: isCompact ? 88 : 92),
-                              child: GridView.builder(
+                              child: DuoFoldBuilder(
+                              builder: (context, fold) => GridView.builder(
                               controller: _gridScrollController,
                               clipBehavior: Clip.none,
                               padding: EdgeInsets.only(
@@ -280,7 +306,10 @@ class _RecentlyAddedScreenState extends State<RecentlyAddedScreen> {
                                 right: isCompact ? 14 : 32,
                                 bottom: isCompact ? 24 : 140,
                               ),
-                              gridDelegate: isCompact
+                              gridDelegate: DuoSpineGridDelegate(
+                                fold: fold,
+                                crossAxisInset: isCompact ? 14 : 32,
+                                base: isCompact
                               ? SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount: (MediaQuery.of(context).size.width / 130).floor().clamp(3, 7),
                                       crossAxisSpacing: 10,
@@ -293,6 +322,7 @@ class _RecentlyAddedScreenState extends State<RecentlyAddedScreen> {
                                       crossAxisSpacing: 16,
                                       mainAxisSpacing: 18,
                                     ),
+                              ),
                               cacheExtent: 150.0,
                               addAutomaticKeepAlives: false,
                               itemCount: _items.length,
@@ -318,6 +348,7 @@ class _RecentlyAddedScreenState extends State<RecentlyAddedScreen> {
                               },
                             ),
                             ),
+                            ),
             ),
 
             // Pinned Top Bar (Always on top)
@@ -331,7 +362,8 @@ class _RecentlyAddedScreenState extends State<RecentlyAddedScreen> {
                   horizontal: isCompact ? 16 : 32,
                   vertical: isCompact ? 12 : 16,
                 ),
-                child: Row(
+                child: DuoAvoidFold(
+                  child: Row(
                   children: [
                     if (!Platform.isAndroid || PlixDeviceHelper.isTelevision || MediaQuery.of(context).orientation == Orientation.landscape) ...[
                       PlixBackButton(
@@ -399,6 +431,7 @@ class _RecentlyAddedScreenState extends State<RecentlyAddedScreen> {
                       ),
                     ],
                   ],
+                ),
                 ),
               ),
             ),

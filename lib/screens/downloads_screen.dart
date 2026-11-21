@@ -11,6 +11,7 @@ import '../widgets/media_card.dart';
 import '../widgets/plix_back_button.dart';
 import '../widgets/plix_home_button.dart';
 import 'details_screen.dart';
+import '../widgets/duo_fold.dart';
 
 class DownloadsScreen extends StatefulWidget {
   final PlexServer server;
@@ -153,24 +154,51 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     return Scaffold(
       backgroundColor: PlixTheme.background,
       body: SafeArea(
-        child: Column(
-          children: [
+        child: DuoFoldBuilder(
+          builder: (context, fold) {
             // Top Bar
-            _buildTopBar(isCompact, activeTasks.length),
+            final topBar = _buildTopBar(isCompact, activeTasks.length);
 
             // Active Downloads List
-            if (activeTasks.isNotEmpty) _buildActiveDownloadsList(activeTasks, isCompact),
+            final activeList = activeTasks.isNotEmpty
+                ? DuoAvoidFold(child: _buildActiveDownloadsList(activeTasks, isCompact))
+                : null;
 
             // Filter Tabs (if both movies and shows exist)
-            _buildFilterRow(isCompact),
+            final filterRow = _buildFilterRow(isCompact);
 
-            // Content Grid or Empty State
-            Expanded(
-              child: items.isEmpty && activeTasks.isEmpty
-                  ? _buildEmptyState()
-                  : _buildGrid(items, isCompact),
-            ),
-          ],
+            return Column(
+              children: [
+                if (fold != null && fold.isTabletop && fold.intersects)
+                  // A long active list would push its cancel buttons and the
+                  // filter chips into the fold, so there it scrolls within
+                  // the upper half instead.
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: fold.start),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        topBar,
+                        if (activeList != null) Flexible(child: SingleChildScrollView(child: activeList)),
+                        filterRow,
+                      ],
+                    ),
+                  )
+                else ...[
+                  topBar,
+                  if (activeList != null) activeList,
+                  filterRow,
+                ],
+
+                // Content Grid or Empty State
+                Expanded(
+                  child: items.isEmpty && activeTasks.isEmpty
+                      ? _buildEmptyState()
+                      : _buildGrid(items, isCompact),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -187,7 +215,8 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         horizontal: isLandscapePhone ? 16 : (isCompact ? 16 : 28),
         vertical: isLandscapePhone ? 6 : (isCompact ? 12 : 16),
       ),
-      child: Row(
+      child: DuoAvoidFold(
+        child: Row(
         children: [
           PlixBackButton(
             focusNode: _backButtonFocusNode,
@@ -211,7 +240,8 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           ),
           if (activeCount > 0) ...[
             const SizedBox(width: 10),
-            Container(
+            Flexible(
+              child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
                 color: PlixTheme.plexGold.withOpacity(0.2),
@@ -220,15 +250,19 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
               ),
               child: Text(
                 '$activeCount downloading',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: PlixTheme.plexGold,
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
                 ),
               ),
+              ),
             ),
           ],
         ],
+      ),
       ),
     );
   }
@@ -249,11 +283,14 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
             children: [
               Icon(Icons.downloading_rounded, size: 16, color: PlixTheme.plexGold),
               const SizedBox(width: 8),
-              const Text(
-                'Active Downloads',
-                style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+              const Expanded(
+                child: Text(
+                  'Active Downloads',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                ),
               ),
-              const Spacer(),
               Text(
                 '${tasks.length} in progress',
                 style: const TextStyle(color: PlixTheme.textMuted, fontSize: 11),
@@ -387,7 +424,9 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
   }
 
   Widget _buildEmptyState() {
-    return Center(
+    return DuoAvoidFold(
+      avoidTabletop: true,
+      child: Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
@@ -428,6 +467,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
           ],
         ),
       ),
+      ),
     );
   }
 
@@ -438,16 +478,20 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: isLandscapePhone ? 16 : (isCompact ? 14 : 28)),
-      child: GridView.builder(
+      child: DuoFoldBuilder(
+        builder: (context, fold) => GridView.builder(
         padding: EdgeInsets.only(
           top: isLandscapePhone ? 6 : 10,
           bottom: isCompact ? 24 : 60,
         ),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        gridDelegate: DuoSpineGridDelegate(
+          fold: fold,
+          base: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: _gridCrossAxisCount(context, isCompact),
           crossAxisSpacing: isLandscapePhone ? 10 : (isCompact ? 10 : 16),
           mainAxisSpacing: isLandscapePhone ? 10 : (isCompact ? 12 : 18),
           childAspectRatio: isLandscapePhone ? 0.53 : (isCompact ? 0.51 : 0.52),
+          ),
         ),
         itemCount: items.length,
         itemBuilder: (context, index) {
@@ -466,6 +510,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
             },
           );
         },
+      ),
       ),
     );
   }

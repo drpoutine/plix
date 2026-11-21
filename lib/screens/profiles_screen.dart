@@ -4,9 +4,11 @@ import '../app_theme.dart';
 import '../models/plex_server.dart';
 import '../models/plix_profile.dart';
 import '../services/plex_auth_service.dart';
+import '../services/iphone_duo_service.dart';
 import '../services/plex_server_service.dart';
 import '../services/profile_service.dart';
 import '../widgets/brand_logo.dart';
+import '../widgets/duo_fold.dart';
 import '../widgets/pin_dialog.dart';
 import '../widgets/profile_avatar_widget.dart';
 import 'auth_chooser_screen.dart';
@@ -297,7 +299,10 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
           child: Stack(
             children: [
             // Center Content
-            Center(
+            DuoAvoidFold(
+              avoidTabletop: true,
+              side: IPhoneDuoService.isBook(context) ? DuoFoldSide.leading : DuoFoldSide.trailing,
+              child: Center(
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
@@ -358,6 +363,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                   ],
                 ),
               ),
+            ),
             ),
           ],
         ),

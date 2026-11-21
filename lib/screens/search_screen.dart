@@ -113,7 +113,13 @@ class _SearchScreenState extends State<SearchScreen> {
           columns++;
         }
         _spineLayout = layout;
+        if (columns == _spineColumns) return;
         _spineColumns = columns;
+        // Tiles were built before this layout; rebuild them with the new
+        // column count.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() {});
+        });
       },
     );
   }

@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import '../app_theme.dart';
 import '../models/plex_media_item.dart';
@@ -11,6 +12,8 @@ import '../widgets/media_card.dart';
 import '../widgets/plix_back_button.dart';
 import '../widgets/plix_home_button.dart';
 import 'details_screen.dart';
+import '../services/iphone_duo_service.dart';
+import '../widgets/duo_fold.dart';
 import '../widgets/plix_bottom_nav.dart';
 import '../services/plix_device_helper.dart';
 
@@ -188,9 +191,11 @@ class _PersonScreenState extends State<PersonScreen> {
                 ],
               ),
             ),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: isCompact ? 18 : 32),
-              child: _buildHeader(isCompact),
+            DuoAvoidFold(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: isCompact ? 18 : 32),
+                child: _buildHeader(isCompact),
+              ),
             ),
             const SizedBox(height: 22),
             Expanded(child: _buildBody(isCompact)),
@@ -279,16 +284,14 @@ class _PersonScreenState extends State<PersonScreen> {
               ),
               if (_person.summary != null && _person.summary!.isNotEmpty) ...[
                 const SizedBox(height: 14),
-                Flexible(
-                  child: Text(
-                    _person.summary!,
-                    maxLines: isCompact ? 4 : 6,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: PlixTheme.textSecondary,
-                      fontSize: 14,
-                      height: 1.45,
-                    ),
+                Text(
+                  _person.summary!,
+                  maxLines: isCompact ? 4 : 6,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: PlixTheme.textSecondary,
+                    fontSize: 14,
+                    height: 1.45,
                   ),
                 ),
               ],
@@ -299,19 +302,27 @@ class _PersonScreenState extends State<PersonScreen> {
     );
   }
 
+  Widget _awayFromFold(Widget child) {
+    return DuoAvoidFold(
+      side: IPhoneDuoService.isTabletop(context) ? DuoFoldSide.trailing : DuoFoldSide.leading,
+      avoidTabletop: true,
+      child: child,
+    );
+  }
+
   Widget _buildBody(bool isCompact) {
     if (_isLoading) {
-      return Center(
+      return _awayFromFold(Center(
         child: CircularProgressIndicator(color: PlixTheme.plexGold),
-      );
+      ));
     }
     if (_errorMessage != null) {
-      return Center(
+      return _awayFromFold(Center(
         child: Text(
           _errorMessage!,
           style: const TextStyle(color: PlixTheme.textSecondary),
         ),
-      );
+      ));
     }
 
     final horizontalPadding = isCompact ? 18.0 : 32.0;
@@ -333,13 +344,14 @@ class _PersonScreenState extends State<PersonScreen> {
         const SizedBox(height: 12),
         Expanded(
           child: _media.isEmpty
-              ? const Center(
+              ? _awayFromFold(const Center(
                   child: Text(
                     'No other media found on this server.',
                     style: TextStyle(color: PlixTheme.textMuted),
                   ),
-                )
-              : LayoutBuilder(
+                ))
+              : DuoFoldBuilder(
+                  builder: (context, fold) => LayoutBuilder(
                   builder: (context, constraints) {
                     const spacing = 18.0;
                     final contentWidth = constraints.maxWidth - (horizontalPadding * 2);
@@ -351,8 +363,44 @@ class _PersonScreenState extends State<PersonScreen> {
                     final maxCellWidth = (availableHeight - 58) / 1.5;
                     final heightColumns =
                         maxCellWidth > 1 ? ((contentWidth + spacing) / (maxCellWidth + spacing)).ceil() : widthColumns;
-                    final columns = (widthColumns > heightColumns ? widthColumns : heightColumns).clamp(2, 14);
-                    final cellWidth = (contentWidth - (spacing * (columns - 1))) / columns;
+                    final baseColumns = (widthColumns > heightColumns ? widthColumns : heightColumns).clamp(2, 14);
+                    SliverGridDelegate delegateFor(double aspectRatio) => DuoSpineGridDelegate(
+                          fold: fold,
+                          crossAxisInset: horizontalPadding,
+                          base: SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: baseColumns,
+                            mainAxisSpacing: 18,
+                            crossAxisSpacing: spacing,
+                            childAspectRatio: aspectRatio,
+                          ),
+                        );
+                    var columns = baseColumns;
+                    var cellWidth = (contentWidth - (spacing * (columns - 1))) / columns;
+                    if (fold != null && fold.isBook) {
+                      // The spine layout changes the column count and tile
+                      // width. Read both back so the card size and the focus
+                      // moves below match what is drawn.
+                      final layout = delegateFor(1).getLayout(SliverConstraints(
+                        axisDirection: AxisDirection.down,
+                        growthDirection: GrowthDirection.forward,
+                        userScrollDirection: ScrollDirection.idle,
+                        scrollOffset: 0,
+                        precedingScrollExtent: 0,
+                        overlap: 0,
+                        remainingPaintExtent: constraints.maxHeight,
+                        crossAxisExtent: contentWidth,
+                        crossAxisDirection: AxisDirection.right,
+                        viewportMainAxisExtent: constraints.maxHeight,
+                        remainingCacheExtent: constraints.maxHeight,
+                        cacheOrigin: 0,
+                      ));
+                      var firstRow = 1;
+                      while (firstRow < 64 && layout.getGeometryForChildIndex(firstRow).scrollOffset <= 0) {
+                        firstRow++;
+                      }
+                      columns = firstRow;
+                      cellWidth = layout.getGeometryForChildIndex(0).crossAxisExtent;
+                    }
                     final cellHeight = cellWidth * 1.5 + 58;
                     return GridView.builder(
                       controller: _gridController,
@@ -363,12 +411,7 @@ class _PersonScreenState extends State<PersonScreen> {
                         horizontalPadding,
                         8,
                       ),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: columns,
-                        mainAxisSpacing: 18,
-                        crossAxisSpacing: spacing,
-                        childAspectRatio: cellWidth / cellHeight,
-                      ),
+                      gridDelegate: delegateFor(cellWidth / cellHeight),
                       itemCount: _media.length,
                       itemBuilder: (context, index) {
                         final item = _media[index];
@@ -410,6 +453,7 @@ class _PersonScreenState extends State<PersonScreen> {
                       },
                     );
                   },
+                ),
                 ),
         ),
       ],

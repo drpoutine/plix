@@ -6,10 +6,12 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../app_theme.dart';
 import '../models/plex_pin.dart';
 import '../services/plex_auth_service.dart';
+import '../services/iphone_duo_service.dart';
 import '../services/plex_server_service.dart';
 import '../widgets/plix_back_button.dart';
 import '../widgets/plix_button.dart';
 import '../widgets/brand_logo.dart';
+import '../widgets/duo_fold.dart';
 import '../services/plix_device_helper.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -159,14 +161,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isCompact = PlixDeviceHelper.isCompact(context);
+    // In book the screen is confined to one half, which is phone-width.
+    final isCompact = PlixDeviceHelper.isCompact(context) || IPhoneDuoService.isBook(context);
 
     return Scaffold(
       backgroundColor: PlixTheme.background,
       body: SafeArea(
         child: Stack(
           children: [
-            Center(
+            DuoAvoidFold(
+              avoidTabletop: true,
+              side: IPhoneDuoService.isBook(context) ? DuoFoldSide.leading : DuoFoldSide.trailing,
+              child: Center(
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                 padding: EdgeInsets.symmetric(horizontal: isCompact ? 20 : 40, vertical: isCompact ? 20 : 30),
@@ -551,6 +557,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ],
           ),
         ),
+      ),
       ),
       Positioned(
         top: 16,

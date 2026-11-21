@@ -10,6 +10,10 @@ import '../models/plex_server.dart';
 
 import '../services/plix_device_helper.dart';
 
+import '../services/iphone_duo_service.dart';
+
+import '../widgets/duo_fold.dart';
+
 import '../widgets/brand_logo.dart';
 
 import '../widgets/plix_back_button.dart';
@@ -167,6 +171,8 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
 
       context: context,
 
+      anchorPoint: IPhoneDuoService.isDuo ? IPhoneDuoService.sheetAnchor : null,
+
       builder: (ctx) {
 
         return StatefulBuilder(
@@ -265,7 +271,20 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
 
             ),
 
-            child: Column(
+            child: DuoFoldBuilder(
+
+              builder: (context, fold) {
+
+              final spine = (fold != null && fold.isBook && fold.intersects) ? fold : null;
+
+              // Half folded on its side, the middle gutter of each tile row
+              // widens to cover the spine so no tile straddles it.
+              final spineGap = spine == null
+                  ? 8.0
+                  : [8.0, spine.size.width - 2 * spine.start, 2 * spine.end - spine.size.width]
+                      .reduce((a, b) => a > b ? a : b);
+
+              return Column(
 
               crossAxisAlignment: CrossAxisAlignment.start,
 
@@ -311,23 +330,29 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
 
                   const SizedBox(width: 10),
 
-                  const Text(
+                  const Expanded(
 
-                    'Appearance & Themes',
+                    child: Text(
 
-                    style: TextStyle(
+                      'Appearance & Themes',
 
-                      color: PlixTheme.textPrimary,
+                      maxLines: 1,
 
-                      fontSize: 24,
+                      overflow: TextOverflow.ellipsis,
 
-                      fontWeight: FontWeight.bold,
+                      style: TextStyle(
+
+                        color: PlixTheme.textPrimary,
+
+                        fontSize: 24,
+
+                        fontWeight: FontWeight.bold,
+
+                      ),
 
                     ),
 
                   ),
-
-                  const Spacer(),
 
                   // Edit Custom Theme Quick Button
 
@@ -385,7 +410,13 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
 
               // Live Theme Preview Bar
 
-              _LiveThemePreviewBar(),
+              Padding(
+
+                padding: EdgeInsets.only(right: spine == null ? 0 : spine.size.width - spine.start),
+
+                child: _LiveThemePreviewBar(),
+
+              ),
 
               SizedBox(height: isTv ? 8 : 14),
 
@@ -538,7 +569,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
 
                               ),
 
-                              if (col < cols - 1) const SizedBox(width: 8),
+                              if (col < cols - 1) SizedBox(width: (cols.isEven && col == cols ~/ 2 - 1) ? spineGap : 8),
 
                             ],
 
@@ -743,7 +774,7 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
 
                               ),
 
-                              if (col < cols - 1) const SizedBox(width: 8),
+                              if (col < cols - 1) SizedBox(width: (cols.isEven && col == cols ~/ 2 - 1) ? spineGap : 8),
 
                             ],
 
@@ -765,7 +796,11 @@ class _AppearanceScreenState extends State<AppearanceScreen> {
 
             ],
 
-          ),
+          );
+
+              },
+
+            ),
 
         ),
 
@@ -2414,7 +2449,9 @@ class _CustomThemeEditorDialogState extends State<_CustomThemeEditorDialog> {
 
           const SizedBox(width: 14),
 
-          const Column(
+          const Expanded(
+
+            child: Column(
 
             crossAxisAlignment: CrossAxisAlignment.start,
 
@@ -2450,6 +2487,8 @@ class _CustomThemeEditorDialogState extends State<_CustomThemeEditorDialog> {
 
           ),
 
+          ),
+
         ],
 
       ),
@@ -2458,7 +2497,9 @@ class _CustomThemeEditorDialogState extends State<_CustomThemeEditorDialog> {
 
         width: 560, // Wider modal
 
-        child: Column(
+        child: _ScrollWhenFolded(
+
+          child: Column(
 
           mainAxisSize: MainAxisSize.min,
 
@@ -2590,6 +2631,8 @@ class _CustomThemeEditorDialogState extends State<_CustomThemeEditorDialog> {
 
         ),
 
+        ),
+
       ),
 
       actions: [
@@ -2639,6 +2682,28 @@ class _CustomThemeEditorDialogState extends State<_CustomThemeEditorDialog> {
       ],
 
     );
+
+  }
+
+}
+
+
+
+/// Half folded, a dialog only has one half of the screen, which is too short
+/// for the editor's four rows, so they scroll. Untouched everywhere else.
+class _ScrollWhenFolded extends StatelessWidget {
+
+  final Widget child;
+
+  const _ScrollWhenFolded({required this.child});
+
+  @override
+
+  Widget build(BuildContext context) {
+
+    if (IPhoneDuoService.foldOf(context) == null) return child;
+
+    return SingleChildScrollView(child: child);
 
   }
 
@@ -3005,6 +3070,8 @@ Future<Color?> _pickColorDialog(BuildContext context, String title, Color initia
   return showDialog<Color>(
 
     context: context,
+
+    anchorPoint: IPhoneDuoService.isDuo ? IPhoneDuoService.sheetAnchor : null,
 
     builder: (ctx) {
 

@@ -4,6 +4,7 @@ import '../services/ratings_service.dart';
 import '../services/download_service.dart';
 import 'package:file_picker/file_picker.dart';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -15,6 +16,8 @@ import '../widgets/plix_home_button.dart';
 import '../widgets/plix_bottom_nav.dart';
 import '../widgets/plix_button.dart';
 import '../services/plix_device_helper.dart';
+import '../services/iphone_duo_service.dart';
+import '../widgets/duo_fold.dart';
 import '../services/native_player_service.dart';
 import '../services/plex_auth_service.dart';
 import '../services/plex_server_service.dart';
@@ -78,7 +81,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final FocusNode _aboutClientFocusNode = FocusNode();
   final FocusNode _aboutVersionFocusNode = FocusNode();
   final FocusNode _aboutWebsiteFocusNode = FocusNode();
+  final FocusNode _duoPostureFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
+  // Keeps the list (and its scroll offset) alive when the fold appears or goes.
+  final GlobalKey _listKey = GlobalKey();
 
   @override
   void initState() {
@@ -420,8 +426,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  String get _duoPostureLabel {
+    switch (IPhoneDuoService.simulatedPosture) {
+      case DuoPosture.closed:
+        return 'Closed';
+      case DuoPosture.fullyOpen:
+        return 'Open flat';
+      case DuoPosture.tabletop:
+      case DuoPosture.book:
+        return 'Half folded';
+      case DuoPosture.none:
+      case null:
+        return 'Off';
+    }
+  }
+
+  Future<void> _cycleDuoPosture() async {
+    // Half folded is stored as tabletop; the service turns it into tabletop
+    // or book from the orientation.
+    const options = [null, DuoPosture.closed, DuoPosture.fullyOpen, DuoPosture.tabletop];
+    var current = IPhoneDuoService.simulatedPosture;
+    if (current == DuoPosture.book) current = DuoPosture.tabletop;
+    final currentIdx = options.indexOf(current);
+    await IPhoneDuoService.setSimulatedPosture(options[(currentIdx + 1) % options.length]);
+    if (mounted) setState(() {});
+  }
+
   void _showToast(String message) {
     if (!mounted) return;
+    // Half folded on its side, a centred toast would sit on the spine.
+    final fold = IPhoneDuoService.foldOf(context);
+    final spine = fold != null && fold.isBook ? fold : null;
     ScaffoldMessenger.of(context).removeCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -435,7 +470,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         duration: const Duration(seconds: 3),
         behavior: SnackBarBehavior.floating,
-        width: 320,
+        width: spine == null ? 320 : null,
+        margin: spine == null
+            ? null
+            : EdgeInsets.fromLTRB(15, 5, MediaQuery.sizeOf(context).width - spine.start + 15, 10),
         backgroundColor: PlixTheme.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
@@ -570,6 +608,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _aboutClientFocusNode.dispose();
     _aboutVersionFocusNode.dispose();
     _aboutWebsiteFocusNode.dispose();
+    _duoPostureFocusNode.dispose();
     super.dispose();
   }
 
@@ -631,10 +670,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
 
             Expanded(
-              child: ListView(
+              child: DuoFoldBuilder(
+                builder: (context, fold) {
+                final sidePadding = isCompact ? 16.0 : 32.0;
+                // Rows are tap targets from edge to edge, so half folded on its
+                // side they stay on the leading half, clear of the spine.
+                final endPadding = (fold != null && fold.isBook && fold.intersects)
+                    ? fold.size.width - fold.start
+                    : sidePadding;
+                return ListView(
+                key: _listKey,
                 controller: _scrollController,
                 physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-                padding: EdgeInsets.symmetric(horizontal: isCompact ? 16 : 32, vertical: 8),
+                padding: EdgeInsets.only(left: sidePadding, right: endPadding, top: 8, bottom: 8),
                 children: [
                   // Section: Profiles
                   Row(
@@ -989,6 +1037,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _SettingsActionTile(
                     focusNode: _aboutWebsiteFocusNode,
                     onUp: () => _aboutVersionFocusNode.requestFocus(),
+                    onDown: kDebugMode ? () => _duoPostureFocusNode.requestFocus() : null,
                     title: 'Official Website',
                     subtitle: 'Visit plix.jman100.com for downloads & updates',
                     trailing: 'https://plix.jman100.com',
@@ -997,8 +1046,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     onTap: () => _openWebsite('https://plix.jman100.com'),
                   ),
 
+                  if (kDebugMode) ...[
+                    const SizedBox(height: 28),
+                    Divider(color: PlixTheme.cardBorder),
+                    const SizedBox(height: 20),
+
+                    // Section: Developer (debug builds only)
+                    Row(
+                      children: [
+                        Icon(Icons.developer_mode_rounded, color: PlixTheme.plexGold, size: 22),
+                        const SizedBox(width: 10),
+                        const Text(
+                          'Developer',
+                          style: TextStyle(
+                            color: PlixTheme.textPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+
+                    _SettingsActionTile(
+                      focusNode: _duoPostureFocusNode,
+                      onUp: () => _aboutWebsiteFocusNode.requestFocus(),
+                      title: 'iPhone Duo posture',
+                      subtitle: 'Simulate the fold to check layouts without the hardware (Off uses the real hinge). Only changes the layout, not the screen size',
+                      trailing: _duoPostureLabel,
+                      isInteractive: true,
+                      onTap: _cycleDuoPosture,
+                    ),
+                  ],
+
                   const SizedBox(height: 48),
                 ],
+              );
+                },
               ),
             ),
           ],

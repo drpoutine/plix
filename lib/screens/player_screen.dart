@@ -492,6 +492,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
   StreamSubscription<IPhoneDuoInfo>? _duoSub;
 
+  Rect? _duoPictureRect;
+
 
 
 
@@ -3174,70 +3176,20 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
 
 
-    if (IPhoneDuoService.isTabletop(context)) {
+    final duo = _duoGeometryOf(context);
 
-
-
-      final mq = MediaQuery.of(context);
-
-
-
-      final dpr = mq.devicePixelRatio;
-
-
-
-      final screenWidth = mq.size.width;
-
-
-
-      final videoWidth = (screenWidth - 24.0).clamp(320.0, 645.0);
-
-
-
-      final videoHeight = videoWidth / 1.77778;
-
-
-
-      final x = (screenWidth - videoWidth) / 2.0;
-
-
-
-      const y = 81.0;
-
-
-
-
-
-
+    if (duo != null) {
+      final dpr = MediaQuery.of(context).devicePixelRatio;
+      final box = duo.picture;
 
       _nativePlayer.setVideoBounds(
-
-
-
-        x: (x * dpr).round(),
-
-
-
-        y: (y * dpr).round(),
-
-
-
-        width: (videoWidth * dpr).round(),
-
-
-
-        height: (videoHeight * dpr).round(),
-
-
-
+        x: (box.left * dpr).round(),
+        y: (box.top * dpr).round(),
+        width: (box.width * dpr).round(),
+        height: (box.height * dpr).round(),
       );
 
-
-
       return;
-
-
-
     }
 
 
@@ -3574,23 +3526,15 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
 
 
-      constraints: BoxConstraints(
+      anchorPoint: _sheetAnchor,
 
 
 
-        maxHeight: IPhoneDuoService.isTabletop(context)
+      scrollControlDisabledMaxHeightRatio: _sheetMaxHeightRatio,
 
 
 
-            ? (MediaQuery.of(context).size.height - 495).clamp(200.0, 440.0)
-
-
-
-            : double.infinity,
-
-
-
-      ),
+      constraints: const BoxConstraints(),
 
 
 
@@ -4713,7 +4657,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
 
 
-    final width = MediaQuery.sizeOf(context).width;
+    final width = _duoPictureRect?.width ?? MediaQuery.sizeOf(context).width;
 
 
 
@@ -4761,7 +4705,7 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
     // Right side of screen = Volume, Left side of screen = Brightness
 
-    final isRightSide = details.globalPosition.dx >= (screenWidth / 2);
+    final isRightSide = details.globalPosition.dx >= (_duoPictureRect?.center.dx ?? screenWidth / 2);
 
     _isAdjustingVolume = isRightSide;
 
@@ -5870,6 +5814,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
       context: context,
 
+      anchorPoint: _sheetAnchor,
+
 
 
       barrierDismissible: false,
@@ -6913,23 +6859,15 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
 
 
 
-      constraints: BoxConstraints(
+      anchorPoint: _sheetAnchor,
 
 
 
-        maxHeight: IPhoneDuoService.isTabletop(context)
+      scrollControlDisabledMaxHeightRatio: _sheetMaxHeightRatio,
 
 
 
-            ? (MediaQuery.of(context).size.height - 495).clamp(200.0, 440.0)
-
-
-
-            : double.infinity,
-
-
-
-      ),
+      constraints: const BoxConstraints(),
 
 
 
@@ -7072,6 +7010,8 @@ class _PlayerScreenState extends State<PlayerScreen> with WidgetsBindingObserver
     showDialog(
 
       context: context,
+
+      anchorPoint: _sheetAnchor,
 
       barrierDismissible: true,
 
@@ -7282,23 +7222,15 @@ void _showSubtitleSelector() {
 
 
 
-      constraints: BoxConstraints(
+      anchorPoint: _sheetAnchor,
 
 
 
-        maxHeight: IPhoneDuoService.isTabletop(context)
+      scrollControlDisabledMaxHeightRatio: _sheetMaxHeightRatio,
 
 
 
-            ? (MediaQuery.of(context).size.height - 495).clamp(200.0, 440.0)
-
-
-
-            : double.infinity,
-
-
-
-      ),
+      constraints: const BoxConstraints(),
 
 
 
@@ -7451,23 +7383,15 @@ void _showSubtitleSelector() {
 
 
 
-      constraints: BoxConstraints(
+      anchorPoint: _sheetAnchor,
 
 
 
-        maxHeight: IPhoneDuoService.isTabletop(context)
+      scrollControlDisabledMaxHeightRatio: _sheetMaxHeightRatio,
 
 
 
-            ? (MediaQuery.of(context).size.height - 495).clamp(200.0, 440.0)
-
-
-
-            : double.infinity,
-
-
-
-      ),
+      constraints: const BoxConstraints(),
 
 
 
@@ -8111,283 +8035,103 @@ void _showSubtitleSelector() {
 
 
 
-  Widget _buildDuoTabletopLayout(BuildContext context, double progressMs, double maxMs) {
-
-
-
+  DuoPlayerGeometry? _duoGeometryOf(BuildContext context) {
+    final fold = IPhoneDuoService.foldOf(context);
+    if (fold == null) return null;
     final mq = MediaQuery.of(context);
+    return DuoPlayerGeometry.compute(size: mq.size, fold: fold, padding: mq.padding);
+  }
 
+  // Sheets and dialogs open beside the controls, never over the picture.
+  // Null off the Duo so other devices with display features are unaffected.
+  Offset? get _sheetAnchor =>
+      IPhoneDuoService.foldOf(context) != null ? IPhoneDuoService.controlsAnchor : null;
 
+  // A sheet confined to one half of the fold may use most of that half.
+  double get _sheetMaxHeightRatio =>
+      IPhoneDuoService.foldOf(context) != null ? 0.9 : 9.0 / 16.0;
 
-    final screenWidth = mq.size.width;
+  Widget _buildDuoTabletopLayout(BuildContext context, double progressMs, double maxMs) =>
+      _buildDuoLayout(context, progressMs, maxMs, book: false);
 
+  Widget _buildDuoBookLayout(BuildContext context, double progressMs, double maxMs) =>
+      _buildDuoLayout(context, progressMs, maxMs, book: true);
 
-
-    final videoWidth = (screenWidth - 24.0).clamp(320.0, 645.0);
-
-
-
-    final videoHeight = videoWidth / 1.77778;
-
-
-
-    final horizontalPad = (screenWidth - videoWidth) / 2.0;
-
-
-
-
-
-
-
+  Widget _buildDuoLayout(BuildContext context, double progressMs, double maxMs, {required bool book}) {
     return Scaffold(
-
-
-
       backgroundColor: Colors.transparent,
+      body: DuoPlayerLayout(
+        // The native (non media_kit) surface sits behind Flutter and needs the
+        // window left transparent.
+        backgroundColor: NativePlayerService.useMediaKit ? Colors.black : null,
+        topBar: _buildDuoTopBar(context, book: book),
+        picture: _buildDuoPicture(),
+        controls: _buildDuoControls(context, progressMs, maxMs),
+      ),
+    );
+  }
 
-
-
-      body: Stack(
-
-
-
+  Widget _buildDuoTopBar(BuildContext context, {required bool book}) {
+    return Container(
+      color: Colors.black,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
         children: [
-
-
-
-          // Upper Half: Top Status bar & Video (y: 0 to 443.5)
-
-
-
-          Positioned(
-
-
-
-            top: 0,
-
-
-
-            left: 0,
-
-
-
-            right: 0,
-
-
-
-            height: 81.0,
-
-
-
-            child: Container(
-
-
-
-              color: Colors.black,
-
-
-
-              padding: EdgeInsets.only(top: mq.padding.top, left: 12, right: 12),
-
-
-
-              child: Row(
-
-
-
-                children: [
-
-
-
-                  IconButton(
-
-
-
-                    icon: const Icon(Icons.arrow_back, color: Colors.white, size: 24),
-
-
-
-                    onPressed: () {
-
-
-
-                      _nativePlayer.stop();
-
-
-
-                      _timelineService.stop(_currentPositionMs);
-
-
-
-                      _nativePlayer.setVideoBounds(x: 0, y: 0, width: -1, height: -1);
-
-
-
-                      Navigator.of(context).pop(_playbackExitItem);
-
-
-
-                    },
-
-
-
-                  ),
-
-
-
-                  IconButton(
-
-
-
-                    icon: const Icon(Icons.home_rounded, color: Colors.white, size: 24),
-
-
-
-                    onPressed: () {
-
-
-
-                      _nativePlayer.stop();
-
-
-
-                      _timelineService.stop(_currentPositionMs);
-
-
-
-                      _nativePlayer.setVideoBounds(x: 0, y: 0, width: -1, height: -1);
-
-
-
-                      Navigator.of(context).popUntil((route) => route.isFirst);
-
-
-
-                    },
-
-
-
-                  ),
-
-
-
-                  const SizedBox(width: 8),
-
-
-
-                  Expanded(
-
-
-
-                    child: Text(
-
-
-
-                      _currentItem.isEpisode ? _currentItem.title : _currentItem.displayTitle,
-
-
-
-                      maxLines: 1,
-
-
-
-                      overflow: TextOverflow.ellipsis,
-
-
-
-                      style: const TextStyle(
-
-
-
-                        color: Colors.white,
-
-
-
-                        fontSize: 16,
-
-
-
-                        fontWeight: FontWeight.bold,
-
-
-
-                      ),
-
-
-
-                    ),
-
-
-
-                  ),
-
-
-
-                  IconButton(
-
-
-
-                    icon: const Icon(Icons.picture_in_picture_alt_rounded, color: Colors.white, size: 22),
-
-
-
-                    tooltip: 'Picture in Picture',
-
-
-
-                    onPressed: () => _nativePlayer.enterPipMode(),
-
-
-
-                  ),
-
-
-
-                ],
-
-
-
-              ),
-
-
-
-            ),
-
-
-
+          IconButton(
+            icon: const Icon(Icons.arrow_back, color: Colors.white, size: 24),
+            onPressed: () {
+              _nativePlayer.stop();
+              _timelineService.stop(_currentPositionMs);
+              _nativePlayer.setVideoBounds(x: 0, y: 0, width: -1, height: -1);
+              Navigator.of(context).pop(_playbackExitItem);
+            },
           ),
+          IconButton(
+            icon: const Icon(Icons.home_rounded, color: Colors.white, size: 24),
+            onPressed: () {
+              _nativePlayer.stop();
+              _timelineService.stop(_currentPositionMs);
+              _nativePlayer.setVideoBounds(x: 0, y: 0, width: -1, height: -1);
+              Navigator.of(context).popUntil((route) => route.isFirst);
+            },
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _currentItem.isEpisode ? _currentItem.title : _currentItem.displayTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.screen_rotation_rounded, color: Colors.white, size: 22),
+            tooltip: book ? 'Portrait Mode' : 'Landscape Mode',
+            onPressed: () {
+              setState(() {
+                _orientationLock = book ? _OrientationLock.lockedPortrait : _OrientationLock.lockedLandscape;
+              });
+              SystemChrome.setPreferredOrientations(book
+                  ? [DeviceOrientation.portraitUp]
+                  : [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.picture_in_picture_alt_rounded, color: Colors.white, size: 22),
+            tooltip: 'Picture in Picture',
+            onPressed: () => _nativePlayer.enterPipMode(),
+          ),
+        ],
+      ),
+    );
+  }
 
-
-
-
-
-
-
-          // Upper Video Box (16:9, y: 81 to 443.5)
-
-
-
-          Positioned(
-
-
-
-            top: 81.0,
-
-
-
-            left: horizontalPad,
-
-
-
-            width: videoWidth,
-
-
-
-            height: videoHeight,
-
-
-
-            child: Stack(
+  Widget _buildDuoPicture() {
+    return Stack(
 
 
 
@@ -8823,6 +8567,82 @@ void _showSubtitleSelector() {
 
 
 
+                if (_isAutoplayCountdownActive && _nextEpisodeItem != null)
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.black87,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: PlixTheme.plexGold, width: 1.5),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Next episode in ${_autoplayCountdownSeconds}s...',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          PlixButton(
+                            label: 'Cancel',
+                            isPrimary: false,
+                            fontSize: 12,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            onPressed: _cancelAutoplay,
+                          ),
+                          const SizedBox(width: 8),
+                          PlixButton(
+                            label: 'Play Now',
+                            fontSize: 12,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            onPressed: _startNextEpisode,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                if (_hasError)
+                  Positioned.fill(
+                    child: Container(
+                      color: Colors.black.withOpacity(0.88),
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.all(12),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'Playback Error',
+                              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _errorMessage,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.white70, fontSize: 12, height: 1.3),
+                            ),
+                            const SizedBox(height: 10),
+                            PlixButton(
+                              icon: const Icon(Icons.arrow_back, color: Colors.black, size: 16),
+                              label: 'Go Back',
+                              fontSize: 12,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              onPressed: () => Navigator.of(context).pop(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
                 _buildGestureHud(isCompact: true),
 
 
@@ -8831,632 +8651,86 @@ void _showSubtitleSelector() {
 
 
 
-            ),
-
-
-
-          ),
-
-
-
-
-
-
-
-          // Lower Half Base (starting 24 pt under fold, y = 500)
-
-
-
-          Positioned(
-
-
-
-            top: 500.0,
-
-
-
-            left: 0,
-
-
-
-            right: 0,
-
-
-
-            bottom: 0,
-
-
-
-            child: Container(
-
-
-
-              color: Colors.black.withOpacity(0.92),
-
-
-
-              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
-
-
-
-              child: Column(
-
-
-
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-
-
-
-                children: [
-
-
-
-                  // Scrubber Row (44 pt height)
-
-
-
-                  SizedBox(
-
-
-
-                    height: 44.0,
-
-
-
-                    child: Row(
-
-
-
-                      children: [
-
-
-
-                        Text(
-
-
-
-                          _formatDuration(Duration(milliseconds: progressMs.toInt())),
-
-
-
-                          style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
-
-
-
-                        ),
-
-
-
-                        Expanded(
-
-
-
-                          child: SliderTheme(
-
-
-
-                            data: SliderTheme.of(context).copyWith(
-
-
-
-                              activeTrackColor: PlixTheme.plexGold,
-
-
-
-                              inactiveTrackColor: Colors.white24,
-
-
-
-                              thumbColor: PlixTheme.plexGold,
-
-
-
-                              trackHeight: 3.5,
-
-
-
-                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-
-
-
-                              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-
-
-
-                            ),
-
-                            child: Slider(
-
-                              value: (_scrubbingPositionMs ?? progressMs).clamp(0.0, maxMs),
-
-                              min: 0.0,
-
-                              max: maxMs,
-
-                              onChangeStart: (val) {
-
-                                setState(() {
-
-                                  _scrubbingPositionMs = val;
-
-                                });
-
-                              },
-
-                              onChanged: (val) {
-
-                                setState(() {
-
-                                  _scrubbingPositionMs = val;
-
-                                });
-
-                              },
-
-                              onChangeEnd: (val) {
-
-                                setState(() {
-
-                                  _scrubbingPositionMs = null;
-
-                                });
-
-                                _seekToTarget(val.round());
-
-                              },
-
-                            ),
-
-
-
-                          ),
-
-
-
-                        ),
-
-
-
-                        Text(
-
-
-
-                          _formatDuration(Duration(milliseconds: _durationMs)),
-
-
-
-                          style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
-
-
-
-                        ),
-
-
-
-                      ],
-
-
-
-                    ),
-
-
-
-                  ),
-
-
-
-
-
-
-
-                  // Main Playback Controls Row (44 pt tall row)
-
-
-
-                  SizedBox(
-
-
-
-                    height: 52.0,
-
-
-
-                    child: Row(
-
-
-
-                      mainAxisAlignment: MainAxisAlignment.center,
-
-
-
-                      children: [
-
-
-
-                        if (_previousEpisodeItem != null)
-
-
-
-                          IconButton(
-
-
-
-                            iconSize: 28,
-
-
-
-                            icon: const Icon(Icons.skip_previous_rounded, color: Colors.white),
-
-
-
-                            tooltip: 'Previous Episode: ${_previousEpisodeItem!.displayTitle}',
-
-
-
-                            onPressed: () => _playEpisode(_previousEpisodeItem!),
-
-
-
-                          ),
-
-
-
-                        const SizedBox(width: 12),
-
-
-
-                        IconButton(
-
-
-
-                          iconSize: 34,
-
-
-
-                          icon: const Icon(Icons.replay_10_rounded, color: Colors.white),
-
-
-
-                          tooltip: 'Rewind 10s',
-
-
-
-                          onPressed: () => _accumulateSeek(-_quickRewindSeconds),
-
-
-
-                        ),
-
-
-
-                        const SizedBox(width: 16),
-
-
-
-                        GestureDetector(
-
-
-
-                          onTap: _togglePlayPause,
-
-
-
-                          child: Container(
-
-
-
-                            width: 52,
-
-
-
-                            height: 52,
-
-
-
-                            decoration: BoxDecoration(
-
-
-
-                              color: PlixTheme.plexGold,
-
-
-
-                              shape: BoxShape.circle,
-
-
-
-                              boxShadow: [
-
-
-
-                                BoxShadow(
-
-
-
-                                  color: PlixTheme.plexGold.withOpacity(0.35),
-
-
-
-                                  blurRadius: 10,
-
-
-
-                                  spreadRadius: 2,
-
-
-
-                                ),
-
-
-
-                              ],
-
-
-
-                            ),
-
-
-
-                            child: Icon(
-
-
-
-                              _isPlaying && !_isPaused ? Icons.pause_rounded : Icons.play_arrow_rounded,
-
-
-
-                              size: 34,
-
-
-
-                              color: Colors.black,
-
-
-
-                            ),
-
-
-
-                          ),
-
-
-
-                        ),
-
-
-
-                        const SizedBox(width: 16),
-
-
-
-                        IconButton(
-
-
-
-                          iconSize: 34,
-
-
-
-                          icon: const Icon(Icons.forward_10_rounded, color: Colors.white),
-
-
-
-                          tooltip: 'Forward 10s',
-
-
-
-                          onPressed: () => _accumulateSeek(_quickRewindSeconds),
-
-
-
-                        ),
-
-
-
-                        const SizedBox(width: 12),
-
-
-
-                        if (_nextEpisodeItem != null)
-
-
-
-                          IconButton(
-
-
-
-                            iconSize: 28,
-
-
-
-                            icon: const Icon(Icons.skip_next_rounded, color: Colors.white),
-
-
-
-                            tooltip: 'Next Episode: ${_nextEpisodeItem!.displayTitle}',
-
-
-
-                            onPressed: () => _playEpisode(_nextEpisodeItem!),
-
-
-
-                          ),
-
-
-
-                      ],
-
-
-
-                    ),
-
-
-
-                  ),
-
-
-
-
-
-
-
-                  // Secondary Controls Row (44 pt height: Audio, Subtitles, Quality, Speed)
-
-
-
-                  SizedBox(
-
-
-
-                    height: 44.0,
-
-
-
-                    child: Row(
-
-
-
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-
-
-
-                      children: [
-
-
-
-                        _DuoTabletopButton(
-
-
-
-                          icon: Icons.audiotrack_rounded,
-
-
-
-                          label: _selectedAudio?.displayTitle ?? 'Audio',
-
-
-
-                          onPressed: _showAudioSelector,
-
-
-
-                        ),
-
-
-
-                        _DuoTabletopButton(
-
-
-
-                          icon: Icons.subtitles_rounded,
-
-
-
-                          label: _selectedSubtitle?.displayTitle ?? 'Subtitles',
-
-
-
-                          isHighlight: _selectedSubtitle != null,
-
-
-
-                          onPressed: _showSubtitleSelector,
-
-
-
-                        ),
-
-
-
-                        if (!_isLocalDownloaded)
-                          _DuoTabletopButton(
-
-
-
-                          icon: Icons.tune_rounded,
-
-
-
-                          label: _selectedQuality.label.split(' ').first,
-
-
-
-                          onPressed: _showQualitySelector,
-
-
-
-                        ),
-
-
-
-                        _DuoTabletopButton(
-
-
-
-                          icon: Icons.speed_rounded,
-
-
-
-                          label: '${_playbackSpeed}x',
-
-
-
-                          onPressed: _showSpeedSelector,
-
-
-
-                        ),
-
-
-
-                      ],
-
-
-
-                    ),
-
-
-
-                  ),
-
-
-
-                ],
-
-
-
-              ),
-
-
-
-            ),
-
-
-
-          ),
-
-
-
-        ],
-
-
-
-      ),
-
-
-
     );
-
-
-
   }
 
+  Widget _buildDuoControls(BuildContext context, double progressMs, double maxMs) {
+    final transport = DuoPlayerControls(
+      positionLabel: _formatDuration(Duration(milliseconds: progressMs.toInt())),
+      durationLabel: _formatDuration(Duration(milliseconds: _durationMs)),
+      value: (_scrubbingPositionMs ?? progressMs).clamp(0.0, maxMs),
+      max: maxMs,
+      onScrubStart: (val) => setState(() => _scrubbingPositionMs = val),
+      onScrubUpdate: (val) => setState(() => _scrubbingPositionMs = val),
+      onScrubEnd: (val) {
+        setState(() => _scrubbingPositionMs = null);
+        _seekToTarget(val.round());
+      },
+      isPlaying: _isPlaying && !_isPaused,
+      onPlayPause: _togglePlayPause,
+      rewindSeconds: _quickRewindSeconds,
+      forwardSeconds: _skipAheadSeconds,
+      onRewind: () => _accumulateSeek(-_quickRewindSeconds),
+      onForward: () => _accumulateSeek(_skipAheadSeconds),
+      previousTitle: _previousEpisodeItem?.displayTitle,
+      onPrevious: _previousEpisodeItem != null ? () => _playEpisode(_previousEpisodeItem!) : null,
+      nextTitle: _nextEpisodeItem?.displayTitle,
+      onNext: _nextEpisodeItem != null ? () => _playEpisode(_nextEpisodeItem!) : null,
+      options: [
+        DuoPlayerOption(
+          icon: Icons.audiotrack_rounded,
+          label: _selectedAudio?.displayTitle ?? 'Audio',
+          onPressed: _showAudioSelector,
+        ),
+        DuoPlayerOption(
+          icon: Icons.subtitles_rounded,
+          label: _selectedSubtitle?.displayTitle ?? 'Subtitles',
+          isHighlight: _selectedSubtitle != null,
+          onPressed: _showSubtitleSelector,
+        ),
+        if (!_isLocalDownloaded)
+          DuoPlayerOption(
+            icon: Icons.tune_rounded,
+            label: _selectedQuality.label.split(' ').first,
+            onPressed: _showQualitySelector,
+          ),
+        DuoPlayerOption(
+          icon: Icons.speed_rounded,
+          label: '${_playbackSpeed}x',
+          onPressed: _showSpeedSelector,
+        ),
+      ],
+    );
 
-
-
-
-
+    return Container(
+      color: Colors.black.withOpacity(0.92),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final details = Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 14),
+            child: _buildPlayerDetails(showTrackActions: false),
+          );
+          // Transport stays put while the details scroll, unless the half is
+          // too short to hold both.
+          if (constraints.maxHeight >= DuoPlayerControls.height + 96) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                transport,
+                Expanded(child: SingleChildScrollView(child: details)),
+              ],
+            );
+          }
+          return SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [transport, details],
+            ),
+          );
+        },
+      ),
+    );
+  }
 
   Widget _buildPortraitLayout(BuildContext context, double progressMs, double maxMs) {
 
@@ -10912,7 +10186,44 @@ void _showSubtitleSelector() {
 
 
 
-                child: Column(
+                child: _buildPlayerDetails(),
+
+
+
+              ),
+
+
+
+              ),
+
+
+
+            ),
+
+
+
+          ],
+
+
+
+        ),
+
+
+
+    );
+
+
+
+  }
+
+
+
+
+
+
+
+  Widget _buildPlayerDetails({bool showTrackActions = true}) {
+    return Column(
 
 
 
@@ -11112,6 +10423,7 @@ void _showSubtitleSelector() {
                               label: 'Watchlist',
                               onPressed: _toggleWatchlist,
                             ),
+                            if (showTrackActions) ...[
                             const SizedBox(width: 14),
                             _buildPortraitIconButton(
                               icon: Icons.speed_rounded,
@@ -11147,6 +10459,7 @@ void _showSubtitleSelector() {
                               label: 'Subtitles',
                               onPressed: _showSubtitleSelector,
                             ),
+                            ],
                           ],
                         ),
                       ),
@@ -11657,34 +10970,7 @@ void _showSubtitleSelector() {
 
 
 
-                ),
-
-
-
-              ),
-
-
-
-              ),
-
-
-
-            ),
-
-
-
-          ],
-
-
-
-        ),
-
-
-
     );
-
-
-
   }
 
 
@@ -11956,7 +11242,14 @@ void _showSubtitleSelector() {
 
 
 
-    final isDuoTabletop = IPhoneDuoService.isTabletop(context);
+    final duoPosture = IPhoneDuoService.postureOf(context);
+
+    final isDuoTabletop = duoPosture == DuoPosture.tabletop;
+
+    final isDuoBook = duoPosture == DuoPosture.book;
+
+    // Gestures on the picture are judged against its own box while folded.
+    _duoPictureRect = (isDuoTabletop || isDuoBook) ? _duoGeometryOf(context)?.picture : null;
 
 
 
@@ -12016,7 +11309,9 @@ void _showSubtitleSelector() {
 
           ? _buildDuoTabletopLayout(context, effectiveProgressMs, maxMs)
 
+          : isDuoBook
 
+              ? _buildDuoBookLayout(context, effectiveProgressMs, maxMs)
 
           : isPortrait
 
@@ -21162,6 +20457,347 @@ class _PlayerDialogButtonState extends State<_PlayerDialogButton> {
 
 
 
+/// Where the player puts its three blocks while an iPhone Duo is half folded,
+/// in the coordinates of the whole view. Nothing overlaps the fold band.
+///
+/// * Tabletop: bar and picture on the upper half, controls on the lower half.
+/// * Book: picture on the left half, bar and controls on the right half.
+@immutable
+class DuoPlayerGeometry {
+  static const double aspectRatio = 16.0 / 9.0;
+  static const double barHeight = 48.0;
+
+  /// Clearance kept between the fold band and anything the player draws.
+  static const double foldGap = 8.0;
+  static const double pictureInset = 12.0;
+
+  /// Back / home / title / rotate / PiP.
+  final Rect topBar;
+
+  /// The 16:9 picture box.
+  final Rect picture;
+
+  /// Scrubber, transport, options and details.
+  final Rect controls;
+
+  const DuoPlayerGeometry({
+    required this.topBar,
+    required this.picture,
+    required this.controls,
+  });
+
+  static DuoPlayerGeometry compute({
+    required Size size,
+    required DuoFold fold,
+    EdgeInsets padding = EdgeInsets.zero,
+  }) {
+    final left = padding.left;
+    final top = padding.top;
+    final right = size.width - padding.right;
+    final bottom = size.height - padding.bottom;
+
+    final Rect bar;
+    final Rect pictureArea;
+    final Rect controls;
+    if (fold.isTabletop) {
+      bar = _rect(left, top, right, top + barHeight);
+      pictureArea = _rect(left + pictureInset, bar.bottom, right - pictureInset, fold.start - foldGap);
+      controls = _rect(left, fold.end + foldGap, right, bottom);
+    } else {
+      final controlsLeft = fold.end + foldGap;
+      bar = _rect(controlsLeft, top, right, top + barHeight);
+      pictureArea = _rect(left + pictureInset, top, fold.start - foldGap, bottom);
+      controls = _rect(controlsLeft, bar.bottom, right, bottom);
+    }
+
+    return DuoPlayerGeometry(topBar: bar, picture: _fit(pictureArea), controls: controls);
+  }
+
+  static Rect _rect(double l, double t, double r, double b) =>
+      Rect.fromLTRB(l, t, r < l ? l : r, b < t ? t : b);
+
+  static Rect _fit(Rect area) {
+    if (area.width <= 0 || area.height <= 0) {
+      return Rect.fromLTWH(area.left, area.top, 0, 0);
+    }
+    var width = area.width;
+    var height = width / aspectRatio;
+    if (height > area.height) {
+      height = area.height;
+      width = height * aspectRatio;
+    }
+    return Rect.fromLTWH(
+      area.left + (area.width - width) / 2.0,
+      area.top + (area.height - height) / 2.0,
+      width,
+      height,
+    );
+  }
+}
+
+/// Lays the player out around the fold of a half-folded iPhone Duo using
+/// [DuoPlayerGeometry]. It must fill the whole view.
+class DuoPlayerLayout extends StatelessWidget {
+  final Widget topBar;
+  final Widget picture;
+  final Widget controls;
+  final Color? backgroundColor;
+
+  const DuoPlayerLayout({
+    super.key,
+    required this.topBar,
+    required this.picture,
+    required this.controls,
+    this.backgroundColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fold = IPhoneDuoService.foldOf(context);
+    final mq = MediaQuery.of(context);
+
+    Widget slot(Rect rect, Widget child) {
+      return Positioned.fromRect(
+        rect: rect,
+        // The rects already exclude the safe areas.
+        child: MediaQuery.removePadding(
+          context: context,
+          removeLeft: true,
+          removeTop: true,
+          removeRight: true,
+          removeBottom: true,
+          child: child,
+        ),
+      );
+    }
+
+    if (fold == null) {
+      return ColoredBox(
+        color: backgroundColor ?? Colors.transparent,
+        child: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(height: DuoPlayerGeometry.barHeight, child: topBar),
+              Expanded(
+                child: Center(
+                  child: AspectRatio(aspectRatio: DuoPlayerGeometry.aspectRatio, child: picture),
+                ),
+              ),
+              Expanded(child: controls),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final geometry = DuoPlayerGeometry.compute(size: mq.size, fold: fold, padding: mq.padding);
+    return Stack(
+      children: [
+        if (backgroundColor != null)
+          Positioned.fill(child: ColoredBox(color: backgroundColor!)),
+        slot(geometry.topBar, topBar),
+        slot(geometry.picture, picture),
+        slot(geometry.controls, controls),
+      ],
+    );
+  }
+}
+
+@immutable
+class DuoPlayerOption {
+  final IconData icon;
+  final String label;
+  final bool isHighlight;
+  final VoidCallback onPressed;
+
+  const DuoPlayerOption({
+    required this.icon,
+    required this.label,
+    this.isHighlight = false,
+    required this.onPressed,
+  });
+}
+
+/// The fixed block of playback controls on a half-folded iPhone Duo:
+/// scrubber, transport and the track options. Always [height] tall.
+class DuoPlayerControls extends StatelessWidget {
+  static const double height = 168.0;
+
+  final String positionLabel;
+  final String durationLabel;
+  final double value;
+  final double max;
+  final ValueChanged<double> onScrubStart;
+  final ValueChanged<double> onScrubUpdate;
+  final ValueChanged<double> onScrubEnd;
+  final bool isPlaying;
+  final VoidCallback onPlayPause;
+  final int rewindSeconds;
+  final int forwardSeconds;
+  final VoidCallback onRewind;
+  final VoidCallback onForward;
+  final String? previousTitle;
+  final VoidCallback? onPrevious;
+  final String? nextTitle;
+  final VoidCallback? onNext;
+  final List<DuoPlayerOption> options;
+
+  const DuoPlayerControls({
+    super.key,
+    required this.positionLabel,
+    required this.durationLabel,
+    required this.value,
+    required this.max,
+    required this.onScrubStart,
+    required this.onScrubUpdate,
+    required this.onScrubEnd,
+    required this.isPlaying,
+    required this.onPlayPause,
+    required this.rewindSeconds,
+    required this.forwardSeconds,
+    required this.onRewind,
+    required this.onForward,
+    this.previousTitle,
+    this.onPrevious,
+    this.nextTitle,
+    this.onNext,
+    required this.options,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            SizedBox(
+              height: 44.0,
+              child: Row(
+                children: [
+                  Text(
+                    positionLabel,
+                    style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                  Expanded(
+                    child: SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        activeTrackColor: PlixTheme.plexGold,
+                        inactiveTrackColor: Colors.white24,
+                        thumbColor: PlixTheme.plexGold,
+                        trackHeight: 3.5,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                      ),
+                      child: Slider(
+                        value: value,
+                        min: 0.0,
+                        max: max,
+                        onChangeStart: onScrubStart,
+                        onChanged: onScrubUpdate,
+                        onChangeEnd: onScrubEnd,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    durationLabel,
+                    style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(
+              height: 52.0,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (onPrevious != null)
+                      IconButton(
+                        iconSize: 28,
+                        icon: const Icon(Icons.skip_previous_rounded, color: Colors.white),
+                        tooltip: 'Previous Episode: ${previousTitle ?? ''}',
+                        onPressed: onPrevious,
+                      ),
+                    const SizedBox(width: 12),
+                    IconButton(
+                      iconSize: 34,
+                      icon: const Icon(Icons.replay_10_rounded, color: Colors.white),
+                      tooltip: 'Rewind ${rewindSeconds}s',
+                      onPressed: onRewind,
+                    ),
+                    const SizedBox(width: 16),
+                    GestureDetector(
+                      onTap: onPlayPause,
+                      child: Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: PlixTheme.plexGold,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: PlixTheme.plexGold.withOpacity(0.35),
+                              blurRadius: 10,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                          size: 34,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    IconButton(
+                      iconSize: 34,
+                      icon: const Icon(Icons.forward_30_rounded, color: Colors.white),
+                      tooltip: 'Forward ${forwardSeconds}s',
+                      onPressed: onForward,
+                    ),
+                    const SizedBox(width: 12),
+                    if (onNext != null)
+                      IconButton(
+                        iconSize: 28,
+                        icon: const Icon(Icons.skip_next_rounded, color: Colors.white),
+                        tooltip: 'Next Episode: ${nextTitle ?? ''}',
+                        onPressed: onNext,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 44.0,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  for (final option in options)
+                    Flexible(
+                      child: _DuoTabletopButton(
+                        icon: option.icon,
+                        label: option.label,
+                        isHighlight: option.isHighlight,
+                        onPressed: option.onPressed,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
 class _DuoTabletopButton extends StatelessWidget {
 
 
@@ -21298,7 +20934,7 @@ class _DuoTabletopButton extends StatelessWidget {
 
 
 
-            ConstrainedBox(
+            Flexible(child: ConstrainedBox(
 
 
 
@@ -21346,7 +20982,7 @@ class _DuoTabletopButton extends StatelessWidget {
 
 
 
-            ),
+            )),
 
 
 

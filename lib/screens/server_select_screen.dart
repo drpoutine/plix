@@ -3,12 +3,14 @@ import 'package:flutter/services.dart';
 import '../app_theme.dart';
 import '../models/plex_server.dart';
 import '../services/plex_auth_service.dart';
+import '../services/iphone_duo_service.dart';
 import '../services/plex_server_service.dart';
 import 'favorite_libraries_screen.dart';
 import 'jellyfin_connect_screen.dart';
 import 'login_screen.dart';
 import 'home_screen.dart';
 import '../widgets/brand_logo.dart';
+import '../widgets/duo_fold.dart';
 import '../services/plix_device_helper.dart';
 
 class ServerSelectScreen extends StatefulWidget {
@@ -222,7 +224,8 @@ class _ServerSelectScreenState extends State<ServerSelectScreen> {
   @override
   Widget build(BuildContext context) {
     final canGoBack = Navigator.of(context).canPop();
-    final isCompact = PlixDeviceHelper.isCompact(context);
+    // In book the screen is confined to one half, which is phone-width.
+    final isCompact = PlixDeviceHelper.isCompact(context) || IPhoneDuoService.isBook(context);
 
     return PopScope(
       canPop: canGoBack || _servers.isEmpty,
@@ -247,7 +250,10 @@ class _ServerSelectScreenState extends State<ServerSelectScreen> {
                     )
                   : null),
         ),
-      body: Center(
+      body: DuoAvoidFold(
+        avoidTabletop: true,
+        side: IPhoneDuoService.isBook(context) ? DuoFoldSide.leading : DuoFoldSide.trailing,
+        child: Center(
         child: SingleChildScrollView(
           controller: _scrollController,
           physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
@@ -380,6 +386,7 @@ class _ServerSelectScreenState extends State<ServerSelectScreen> {
             ),
           ),
         ),
+      ),
       ),
     ),
     );
@@ -741,7 +748,11 @@ class _ServerCardState extends State<_ServerCard> {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           width: widget.cardWidth,
-          height: widget.cardWidth == double.infinity ? null : 116,
+          // The content is 8pt taller than 116; only the Duo's inner display
+          // gets the room, so every other device keeps its layout.
+          height: widget.cardWidth == double.infinity
+              ? null
+              : (IPhoneDuoService.isInnerDisplay(context) ? 124 : 116),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: isHighlighted ? PlixTheme.cardFocused : PlixTheme.surface,

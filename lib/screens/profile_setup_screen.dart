@@ -5,11 +5,13 @@ import '../widgets/appearance_hero_tile.dart';
 import '../app_theme.dart';
 import '../models/plix_profile.dart';
 import '../services/plex_auth_service.dart';
+import '../services/iphone_duo_service.dart';
 import '../services/plex_server_service.dart';
 import '../services/profile_service.dart';
 import '../services/plix_device_helper.dart';
 import '../services/custom_avatar_service.dart';
 import '../widgets/plix_back_button.dart';
+import '../widgets/duo_fold.dart';
 import '../widgets/brand_logo.dart';
 import '../widgets/profile_avatar_widget.dart';
 import '../widgets/pin_dialog.dart';
@@ -51,6 +53,8 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   final FocusNode _appearanceTileFocusNode = FocusNode();
   final FocusNode _saveFocusNode = FocusNode();
   final FocusNode _deleteFocusNode = FocusNode();
+  // Keeps the form (and its keyboard connection) alive when the hinge moves.
+  final GlobalKey _formKey = GlobalKey();
   late final String _targetProfileId;
 
   void _onThemeChanged() {
@@ -454,6 +458,20 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // In tabletop the keyboard takes the lower half, so the form moves up.
+    final duoSide = IPhoneDuoService.isBook(context) ||
+            (IPhoneDuoService.isTabletop(context) && MediaQuery.viewInsetsOf(context).bottom > 0)
+        ? DuoFoldSide.leading
+        : DuoFoldSide.trailing;
+    // Book: the form stays left of the spine. Computed here rather than
+    // measured by DuoAvoidFold so it holds from the first frame; the appearance
+    // tile inside measures itself against the fold as well.
+    final duoFold = IPhoneDuoService.foldOf(context);
+    double bookInset = 0;
+    if (duoFold != null && duoFold.isBook) {
+      bookInset = (MediaQuery.sizeOf(context).width - MediaQuery.paddingOf(context).right - duoFold.start)
+          .clamp(0.0, double.infinity);
+    }
     return PopScope(
       canPop: !widget.isInitialSetup,
       onPopInvokedWithResult: (didPop, result) {
@@ -519,7 +537,13 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
             // Main Body Content
             Expanded(
+              child: Padding(
+              padding: EdgeInsets.only(right: bookInset),
+              child: DuoAvoidFold(
+              avoidTabletop: true,
+              side: duoSide,
               child: SingleChildScrollView(
+                key: _formKey,
                 physics: const BouncingScrollPhysics(),
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Column(
@@ -1071,6 +1095,8 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                     )
                   ],
                 ),
+              ),
+              ),
               ),
             ),
           ],

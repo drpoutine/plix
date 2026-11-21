@@ -13,6 +13,8 @@ import '../widgets/brand_logo.dart';
 import '../widgets/plix_button.dart';
 import 'home_screen.dart';
 import 'server_select_screen.dart';
+import '../services/iphone_duo_service.dart';
+import '../widgets/duo_fold.dart';
 
 class FavoriteLibrariesScreen extends StatefulWidget {
   final PlexAuthService authService;
@@ -342,11 +344,23 @@ class _FavoriteLibrariesScreenState extends State<FavoriteLibrariesScreen> {
     return null;
   }
 
+  Widget _awayFromFold(Widget child) {
+    return DuoAvoidFold(
+      side: IPhoneDuoService.isTabletop(context) ? DuoFoldSide.trailing : DuoFoldSide.leading,
+      avoidTabletop: true,
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isCompact = PlixDeviceHelper.isCompact(context);
     final isPortrait = MediaQuery.of(context).orientation == Orientation.portrait;
     final isMobilePortrait = isCompact || (isPortrait && MediaQuery.of(context).size.width < 700);
+    final isBook = IPhoneDuoService.isBook(context);
+    // In book posture the actions only have the right half of the bar, so
+    // they use the short labels the narrow layout already has.
+    final shortActions = isMobilePortrait || isBook;
 
     return PopScope(
       canPop: false,
@@ -357,7 +371,12 @@ class _FavoriteLibrariesScreenState extends State<FavoriteLibrariesScreen> {
       child: Scaffold(
         backgroundColor: PlixTheme.background,
         appBar: AppBar(
-          title: const Text('Favorite Libraries'),
+          // iOS centres the title while only one action is showing, which in
+          // book posture is on the spine.
+          title: isBook
+              ? const DuoAvoidFold(child: Text('Favorite Libraries'))
+              : const Text('Favorite Libraries'),
+          centerTitle: isBook ? false : null,
           automaticallyImplyLeading: false,
           leading: widget.isInitialSetup
               ? null
@@ -370,7 +389,7 @@ class _FavoriteLibrariesScreenState extends State<FavoriteLibrariesScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
             child: PlixButton(
               focusNode: _refreshBtnFocusNode,
-              label: isMobilePortrait ? '' : (_isRefreshing ? 'Refreshing...' : 'Refresh Servers'),
+              label: shortActions ? '' : (_isRefreshing ? 'Refreshing...' : 'Refresh Servers'),
               icon: _isRefreshing
                   ? SizedBox(
                       width: 16,
@@ -390,7 +409,7 @@ class _FavoriteLibrariesScreenState extends State<FavoriteLibrariesScreen> {
               highlightTextColor: Colors.black,
               highlightBorderColor: PlixTheme.plexGold,
               fontSize: 13,
-              padding: isMobilePortrait
+              padding: shortActions
                   ? const EdgeInsets.symmetric(horizontal: 10, vertical: 8)
                   : const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               onRight: () {
@@ -414,7 +433,7 @@ class _FavoriteLibrariesScreenState extends State<FavoriteLibrariesScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               child: PlixButton(
                 focusNode: _saveBtnFocusNode,
-                label: isMobilePortrait ? 'Save' : 'Save Changes',
+                label: shortActions ? 'Save' : 'Save Changes',
                 icon: const Icon(Icons.check_rounded, size: 18),
                 backgroundColor: PlixTheme.plexGold,
                 highlightColor: PlixTheme.plexGoldLight,
@@ -437,7 +456,7 @@ class _FavoriteLibrariesScreenState extends State<FavoriteLibrariesScreen> {
         ],
       ),
       body: _isLoading
-          ? Center(
+          ? _awayFromFold(Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -451,9 +470,9 @@ class _FavoriteLibrariesScreenState extends State<FavoriteLibrariesScreen> {
                   ),
                 ],
               ),
-            )
+            ))
           : _errorMessage != null
-              ? Center(
+              ? _awayFromFold(Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -466,7 +485,7 @@ class _FavoriteLibrariesScreenState extends State<FavoriteLibrariesScreen> {
                       ),
                     ],
                   ),
-                )
+                ))
               : Center(
                   child: SingleChildScrollView(
                     controller: _scrollController,
@@ -537,7 +556,8 @@ class _FavoriteLibrariesScreenState extends State<FavoriteLibrariesScreen> {
                           const SizedBox(height: 16),
 
                           // Big Save Changes button at bottom as well
-                          Center(
+                          DuoAvoidFold(
+                            child: Center(
                             child: SizedBox(
                               width: isCompact ? double.infinity : 280,
                               child: PlixButton(
@@ -553,6 +573,7 @@ class _FavoriteLibrariesScreenState extends State<FavoriteLibrariesScreen> {
                                 onPressed: _saveChanges,
                               ),
                             ),
+                          ),
                           ),
                           const SizedBox(height: 32),
                         ],
@@ -644,14 +665,30 @@ class _FavoriteLibrariesScreenState extends State<FavoriteLibrariesScreen> {
             ),
           )
         else
-          LayoutBuilder(
+          DuoFoldBuilder(
+            builder: (context, fold) => LayoutBuilder(
             builder: (context, constraints) {
               final availableWidth = constraints.maxWidth;
               const cardWidth = 240.0;
               const spacing = 12.0;
-              final columns = isCompact
+              var columns = isCompact
                   ? 2
                   : ((availableWidth + spacing) / (cardWidth + spacing)).floor().clamp(1, 4);
+
+              // Book: fill each side of the spine with whole cards and jump
+              // the fold between them, so no card sits on it.
+              int? spineAfter;
+              var spineGap = spacing;
+              if (!isCompact && fold != null && fold.isBook && fold.intersects) {
+                int fit(double width) => ((width + spacing) / (cardWidth + spacing)).floor();
+                final left = fit(fold.start);
+                final right = fit(availableWidth - fold.end);
+                if (left >= 1 && right >= 1) {
+                  columns = left + right;
+                  spineAfter = left;
+                  spineGap = fold.end - (left * cardWidth + (left - 1) * spacing);
+                }
+              }
 
               final List<List<PlexLibrary>> rows = [];
               for (int i = 0; i < libs.length; i += columns) {
@@ -667,7 +704,7 @@ class _FavoriteLibrariesScreenState extends State<FavoriteLibrariesScreen> {
                       mainAxisSize: isCompact ? MainAxisSize.max : MainAxisSize.min,
                       children: [
                         for (int c = 0; c < rows[r].length; c++) ...[
-                          if (c > 0) const SizedBox(width: spacing),
+                          if (c > 0) SizedBox(width: c == spineAfter ? spineGap : spacing),
                           isCompact
                               ? Expanded(
                                   child: _FavoriteLibraryCard(
@@ -782,6 +819,7 @@ class _FavoriteLibrariesScreenState extends State<FavoriteLibrariesScreen> {
                 ],
               );
             },
+          ),
           ),
       ],
     );

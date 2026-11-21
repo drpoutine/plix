@@ -2,10 +2,12 @@ import 'dart:io';
 import 'profiles_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/brand_logo.dart';
+import '../widgets/duo_fold.dart';
 import 'package:flutter/material.dart';
 import '../app_theme.dart';
 import '../models/plex_server.dart';
 import '../services/plex_auth_service.dart';
+import '../services/iphone_duo_service.dart';
 import '../services/plex_server_service.dart';
 import 'auth_chooser_screen.dart';
 import 'home_screen.dart';
@@ -263,7 +265,10 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: PlixTheme.background,
-      body: Center(
+      body: DuoAvoidFold(
+        avoidTabletop: true,
+        side: IPhoneDuoService.isBook(context) ? DuoFoldSide.leading : DuoFoldSide.trailing,
+        child: Center(
         child: FadeTransition(
           opacity: _fadeAnim,
           child: ScaleTransition(
@@ -300,6 +305,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
             ),
           ),
         ),
+      ),
       ),
     );
   }
