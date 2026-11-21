@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:plix/screens/player_screen.dart';
@@ -75,39 +77,40 @@ class _ProbeState extends State<_Probe> {
   Widget build(BuildContext context) => const ColoredBox(color: Colors.blueGrey);
 }
 
-Widget _controls({bool episode = true}) {
+/// [log] receives the name of every callback the controls invoke.
+Widget _controls({bool episode = true, List<String>? log}) {
   return DuoPlayerControls(
     positionLabel: '1:02:03',
     durationLabel: '2:14:59',
     value: 30,
     max: 100,
-    onScrubStart: (_) {},
-    onScrubUpdate: (_) {},
-    onScrubEnd: (_) {},
+    onScrubStart: (_) => log?.add('scrubStart'),
+    onScrubUpdate: (_) => log?.add('scrubUpdate'),
+    onScrubEnd: (_) => log?.add('scrubEnd'),
     isPlaying: true,
-    onPlayPause: () {},
+    onPlayPause: () => log?.add('playPause'),
     rewindSeconds: 10,
     forwardSeconds: 30,
-    onRewind: () {},
-    onForward: () {},
+    onRewind: () => log?.add('rewind'),
+    onForward: () => log?.add('forward'),
     previousTitle: episode ? 'Previous' : null,
-    onPrevious: episode ? () {} : null,
+    onPrevious: episode ? () => log?.add('previous') : null,
     nextTitle: episode ? 'Next' : null,
-    onNext: episode ? () {} : null,
+    onNext: episode ? () => log?.add('next') : null,
     options: [
       DuoPlayerOption(
         icon: Icons.audiotrack_rounded,
         label: 'English (TrueHD 7.1 Atmos) Commentary',
-        onPressed: () {},
+        onPressed: () => log?.add('audio'),
       ),
       DuoPlayerOption(
         icon: Icons.subtitles_rounded,
         label: 'English (SDH, Forced) PGS',
         isHighlight: true,
-        onPressed: () {},
+        onPressed: () => log?.add('subtitles'),
       ),
-      DuoPlayerOption(icon: Icons.tune_rounded, label: 'Original', onPressed: () {}),
-      DuoPlayerOption(icon: Icons.speed_rounded, label: '1.25x', onPressed: () {}),
+      DuoPlayerOption(icon: Icons.tune_rounded, label: 'Original', onPressed: () => log?.add('quality')),
+      DuoPlayerOption(icon: Icons.speed_rounded, label: '1.25x', onPressed: () => log?.add('speed')),
     ],
   );
 }
@@ -156,6 +159,7 @@ Future<void> _pump(
   Size size,
   Widget home, {
   EdgeInsets insets = EdgeInsets.zero,
+  List<ui.DisplayFeature> foreignFeatures = const [],
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
@@ -167,7 +171,15 @@ Future<void> _pump(
   );
   addTearDown(tester.view.reset);
   await tester.pumpWidget(MaterialApp(
-    builder: (context, child) => DuoScope(child: child!),
+    builder: (context, child) {
+      final scope = DuoScope(child: child!);
+      if (foreignFeatures.isEmpty) return scope;
+      // Display features some other device reports, e.g. an Android foldable.
+      return MediaQuery(
+        data: MediaQuery.of(context).copyWith(displayFeatures: foreignFeatures),
+        child: scope,
+      );
+    },
     home: home,
   ));
   await tester.pump();
@@ -371,14 +383,14 @@ void main() {
   });
 
   group('DuoPlayerControls', () {
-    Future<void> pumpAt(WidgetTester tester, double width, {bool episode = true}) async {
+    Future<void> pumpAt(WidgetTester tester, double width, {bool episode = true, List<String>? log}) async {
       await _pump(
         tester,
         _innerLandscape,
         Scaffold(
           body: Align(
             alignment: Alignment.topLeft,
-            child: SizedBox(width: width, child: _controls(episode: episode)),
+            child: SizedBox(width: width, child: _controls(episode: episode, log: log)),
           ),
         ),
       );
@@ -404,19 +416,55 @@ void main() {
     });
 
     testWidgets('offers previous / next only for episodes and reports taps', (tester) async {
-      await pumpAt(tester, 440);
+      final log = <String>[];
+      await pumpAt(tester, 440, log: log);
       expect(find.byIcon(Icons.skip_previous_rounded), findsOneWidget);
       expect(find.byIcon(Icons.skip_next_rounded), findsOneWidget);
       expect(find.byType(InkWell), findsNWidgets(4 + 4));
 
-      await pumpAt(tester, 440, episode: false);
+      // Every control reports to its own callback and to no other.
+      final taps = <IconData, String>{
+        Icons.skip_previous_rounded: 'previous',
+        Icons.replay_10_rounded: 'rewind',
+        Icons.pause_rounded: 'playPause',
+        Icons.forward_30_rounded: 'forward',
+        Icons.skip_next_rounded: 'next',
+        Icons.audiotrack_rounded: 'audio',
+        Icons.subtitles_rounded: 'subtitles',
+        Icons.tune_rounded: 'quality',
+        Icons.speed_rounded: 'speed',
+      };
+      for (final entry in taps.entries) {
+        expect(find.byIcon(entry.key), findsOneWidget, reason: entry.value);
+        await tester.tap(find.byIcon(entry.key));
+        await tester.pump();
+        expect(log, [entry.value], reason: 'tapping ${entry.value}');
+        log.clear();
+      }
+
+      await tester.drag(find.byType(Slider), const Offset(50, 0));
+      await tester.pump();
+      expect(log.length, greaterThanOrEqualTo(3));
+      expect(log.first, 'scrubStart');
+      expect(log.last, 'scrubEnd');
+      expect(log.sublist(1, log.length - 1), everyElement('scrubUpdate'));
+      log.clear();
+
+      await pumpAt(tester, 440, episode: false, log: log);
       expect(find.byIcon(Icons.skip_previous_rounded), findsNothing);
       expect(find.byIcon(Icons.skip_next_rounded), findsNothing);
       expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
+      // The transport that remains still reports correctly.
+      await tester.tap(find.byIcon(Icons.replay_10_rounded));
+      await tester.tap(find.byIcon(Icons.pause_rounded));
+      await tester.tap(find.byIcon(Icons.forward_30_rounded));
+      expect(log, ['rewind', 'playPause', 'forward']);
     });
   });
 
   group('player sheets and dialogs', () {
+    // Uses the same helpers as PlayerScreen's _sheetAnchor and
+    // _sheetMaxHeightRatio, so the gating is the production one.
     Widget host() {
       return Scaffold(
         body: Builder(
@@ -426,9 +474,9 @@ void main() {
                 TextButton(
                   onPressed: () => showModalBottomSheet<void>(
                     context: context,
-                    anchorPoint: IPhoneDuoService.controlsAnchor,
+                    anchorPoint: IPhoneDuoService.controlsAnchorOf(context),
                     scrollControlDisabledMaxHeightRatio:
-                        IPhoneDuoService.foldOf(context) != null ? 0.9 : 9.0 / 16.0,
+                        IPhoneDuoService.controlsSheetHeightRatioOf(context),
                     constraints: const BoxConstraints(),
                     builder: (_) => ListView(
                       key: const ValueKey('sheet'),
@@ -440,7 +488,7 @@ void main() {
                 TextButton(
                   onPressed: () => showDialog<void>(
                     context: context,
-                    anchorPoint: IPhoneDuoService.controlsAnchor,
+                    anchorPoint: IPhoneDuoService.controlsAnchorOf(context),
                     builder: (_) => const AlertDialog(
                       key: ValueKey('dialog'),
                       title: Text('Subtitles'),
@@ -460,6 +508,8 @@ void main() {
       await IPhoneDuoService.setSimulatedPosture(DuoPosture.tabletop);
       await _pump(tester, _innerPortrait, host());
       final fold = IPhoneDuoService.foldOf(tester.element(find.text('sheet')))!;
+      expect(IPhoneDuoService.controlsAnchorOf(tester.element(find.text('sheet'))), IPhoneDuoService.controlsAnchor);
+      expect(IPhoneDuoService.controlsSheetHeightRatioOf(tester.element(find.text('sheet'))), 0.9);
 
       await tester.tap(find.text('sheet'));
       await tester.pumpAndSettle();
@@ -482,6 +532,8 @@ void main() {
       await IPhoneDuoService.setSimulatedPosture(DuoPosture.book);
       await _pump(tester, _innerLandscape, host());
       final fold = IPhoneDuoService.foldOf(tester.element(find.text('sheet')))!;
+      expect(IPhoneDuoService.controlsAnchorOf(tester.element(find.text('sheet'))), IPhoneDuoService.controlsAnchor);
+      expect(IPhoneDuoService.controlsSheetHeightRatioOf(tester.element(find.text('sheet'))), 0.9);
 
       await tester.tap(find.text('sheet'));
       await tester.pumpAndSettle();
@@ -501,6 +553,9 @@ void main() {
     testWidgets('are unchanged when flat: full width, default height cap', (tester) async {
       await IPhoneDuoService.setSimulatedPosture(DuoPosture.fullyOpen);
       await _pump(tester, _innerPortrait, host());
+      // As in production: no anchor at all while the fold reserves nothing.
+      expect(IPhoneDuoService.controlsAnchorOf(tester.element(find.text('sheet'))), isNull);
+      expect(IPhoneDuoService.controlsSheetHeightRatioOf(tester.element(find.text('sheet'))), 9.0 / 16.0);
 
       await tester.tap(find.text('sheet'));
       await tester.pumpAndSettle();
@@ -509,6 +564,56 @@ void main() {
       expect(sheet.width, _innerPortrait.width);
       expect(sheet.bottom, _innerPortrait.height);
       expect(sheet.height, closeTo(_innerPortrait.height * 9.0 / 16.0, 0.01));
+    });
+
+    testWidgets('no anchor and the default cap when closed, flat or not a Duo', (tester) async {
+      for (final entry in <DuoPosture?, Size>{
+        null: _innerPortrait,
+        DuoPosture.closed: _cover,
+        DuoPosture.fullyOpen: _innerLandscape,
+      }.entries) {
+        await IPhoneDuoService.setSimulatedPosture(entry.key);
+        await _pump(tester, entry.value, host());
+        final context = tester.element(find.text('sheet'));
+        expect(IPhoneDuoService.postureOf(context), entry.key ?? DuoPosture.none);
+        expect(IPhoneDuoService.controlsAnchorOf(context), isNull, reason: '${entry.key}');
+        expect(IPhoneDuoService.controlsSheetHeightRatioOf(context), 9.0 / 16.0, reason: '${entry.key}');
+      }
+    });
+
+    testWidgets('another foldable with a hinge keeps Flutter\'s default placement', (tester) async {
+      // Not a Duo, but MediaQuery carries a half-opened hinge, as an Android
+      // foldable in flex mode does.
+      const hinge = ui.DisplayFeature(
+        bounds: Rect.fromLTRB(0, 455.5, 669, 495.5),
+        type: ui.DisplayFeatureType.hinge,
+        state: ui.DisplayFeatureState.postureHalfOpened,
+      );
+      await _pump(tester, _innerPortrait, host(), foreignFeatures: const [hinge]);
+      final context = tester.element(find.text('sheet'));
+      expect(MediaQuery.of(context).displayFeatures, const [hinge]);
+      expect(IPhoneDuoService.isDuo, isFalse);
+      expect(IPhoneDuoService.controlsAnchorOf(context), isNull);
+      expect(IPhoneDuoService.controlsSheetHeightRatioOf(context), 9.0 / 16.0);
+
+      // Flutter's own default for a null anchor: the sub-screen holding
+      // Offset.zero (the upper one), full width, capped at 9/16 of it. With
+      // the controls anchor the sheet would be in the lower one instead.
+      await tester.tap(find.text('sheet'));
+      await tester.pumpAndSettle();
+      final sheet = tester.getRect(find.byKey(const ValueKey('sheet')));
+      expect(sheet.left, 0);
+      expect(sheet.width, _innerPortrait.width);
+      expect(sheet.bottom, closeTo(hinge.bounds.top, 0.01));
+      expect(sheet.height, closeTo(hinge.bounds.top * 9.0 / 16.0, 0.01));
+      Navigator.of(tester.element(find.byKey(const ValueKey('sheet')))).pop();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('dialog'));
+      await tester.pumpAndSettle();
+      final dialog = tester.getRect(find.byKey(const ValueKey('dialog')));
+      expect(dialog.bottom, lessThanOrEqualTo(hinge.bounds.top));
+      expect(tester.takeException(), isNull);
     });
   });
 }

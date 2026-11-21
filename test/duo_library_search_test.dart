@@ -95,13 +95,15 @@ Future<void> _settle(WidgetTester tester) async {
   }
 }
 
-Future<void> _pumpLibrary(WidgetTester tester, Size size, DuoPosture? posture) async {
+const _longTitle = 'A Library With A Remarkably Long Name For An App Bar Heading That Keeps Going';
+
+Future<void> _pumpLibrary(WidgetTester tester, Size size, DuoPosture? posture, {String title = 'Movies'}) async {
   await _setUp(tester, size, posture);
   final server = _server();
   await tester.pumpWidget(MaterialApp(
     builder: (context, child) => DuoScope(child: child!),
     home: LibraryScreen(
-      library: PlexLibrary(key: '1', title: 'Movies', type: 'movie', serverId: 'test_srv', server: server),
+      library: PlexLibrary(key: '1', title: title, type: 'movie', serverId: 'test_srv', server: server),
       server: server,
       clientId: 'client',
     ),
@@ -231,7 +233,9 @@ void main() {
       }
     });
 
-    testWidgets('book: app bar buttons and alphabet rail are off the spine', (tester) async {
+    // Pose invariant: the same holds flat. The fold handling of the title is
+    // covered by the long-title pair below.
+    testWidgets('book: app bar buttons and alphabet rail are off the spine (as they are flat)', (tester) async {
       await _pumpLibrary(tester, _innerLandscape, DuoPosture.book);
       final band = _band(tester);
       final buttons = find.byType(IconButton);
@@ -241,6 +245,25 @@ void main() {
       }
       _expectClearOfSpine(tester.getRect(find.text('Movies')), band, 'title');
       _expectClearOfSpine(_letterCell(tester, 'A'), band, 'alphabet rail');
+    });
+
+    testWidgets('book: a long title is cut off before the spine', (tester) async {
+      await _pumpLibrary(tester, _innerLandscape, DuoPosture.book, title: _longTitle);
+      expect(tester.takeException(), isNull);
+      final band = _band(tester);
+      final title = tester.getRect(find.text(_longTitle));
+      expect(title.width, greaterThan(100));
+      expect(title.right, lessThanOrEqualTo(band.left + 0.01), reason: 'title at $title runs into the spine $band');
+    });
+
+    testWidgets('flat landscape lets a long title run across the middle (control)', (tester) async {
+      await _pumpLibrary(tester, _innerLandscape, DuoPosture.fullyOpen, title: _longTitle);
+      expect(tester.takeException(), isNull);
+      final title = tester.getRect(find.text(_longTitle));
+      await IPhoneDuoService.setSimulatedPosture(DuoPosture.book);
+      final band = _band(tester);
+      expect(title.left < band.right && title.right > band.left, isTrue,
+          reason: 'without the fold handling the title at $title would sit on the spine $band');
     });
 
     testWidgets('book: jumping to a letter lands on the row that really holds it', (tester) async {
@@ -330,7 +353,7 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
     });
 
-    testWidgets('tabletop: fixed bars stay clear of the fold', (tester) async {
+    testWidgets('tabletop: fixed bars are clear of the fold (as they are flat)', (tester) async {
       await _pumpLibrary(tester, _innerPortrait, DuoPosture.tabletop);
       final band = _band(tester);
       expect(tester.getRect(find.byType(AppBar)).bottom, lessThanOrEqualTo(band.top));
@@ -407,7 +430,7 @@ void main() {
       _expectClearOfSpine(tester.getRect(find.text('Search Movies & TV Shows')), band, 'empty state');
     });
 
-    testWidgets('book: the clear button and result count are off the spine', (tester) async {
+    testWidgets('book: the clear button and result count are off the spine (as they are flat)', (tester) async {
       await _pumpSearch(tester, _innerLandscape, DuoPosture.book);
       final band = _band(tester);
       _expectClearOfSpine(tester.getRect(find.byIcon(Icons.close_rounded)), band, 'clear button');
@@ -471,7 +494,10 @@ void main() {
           reason: 'down stays in the same visual column');
     });
 
-    testWidgets('tabletop: fixed controls and the empty state are clear of the fold', (tester) async {
+    // A pose invariant, not proof of fold handling: at this size the empty
+    // state sits above the middle line when flat too (checked: 328..390pt
+    // against a band at 455.5..495.5).
+    testWidgets('tabletop: fixed controls and the empty state are clear of the fold (as they are flat)', (tester) async {
       await _pumpSearch(tester, _innerPortrait, DuoPosture.tabletop, search: false);
       expect(tester.takeException(), isNull);
       final band = _band(tester);

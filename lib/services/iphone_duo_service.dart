@@ -351,8 +351,10 @@ class IPhoneDuoService {
   static double controlsSheetHeightRatioOf(BuildContext context) =>
       foldOf(context) != null ? 0.9 : 9.0 / 16.0;
 
-  static Future<IPhoneDuoInfo> init() async {
-    if (!Platform.isIOS) return currentInfo;
+  /// [debugIsIOS] lets tests reach the channel code off iOS; production
+  /// callers leave it null.
+  static Future<IPhoneDuoInfo> init({@visibleForTesting bool? debugIsIOS}) async {
+    if (!(debugIsIOS ?? Platform.isIOS)) return currentInfo;
     _channel.setMethodCallHandler(_handleNativeCall);
     try {
       final res =

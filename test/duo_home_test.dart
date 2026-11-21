@@ -237,7 +237,7 @@ void main() {
       expect(seeAll.left, greaterThan(band.right));
     });
 
-    testWidgets('the sidebar is clear of the spine collapsed and expanded', (tester) async {
+    testWidgets('the sidebar is clear of the spine collapsed and expanded (as it is flat)', (tester) async {
       await _pump(tester, _innerLandscape, _home());
       final band = _band(_innerLandscape);
       expect(tester.getRect(find.byType(SidebarNav)).right, lessThan(band.left));
@@ -289,7 +289,7 @@ void main() {
   group('tabletop', () {
     setUp(() => IPhoneDuoService.setSimulatedPosture(DuoPosture.tabletop));
 
-    testWidgets('fixed chrome is clear of the fold and the content scrolls through it',
+    testWidgets('fixed chrome is clear of the fold (as it is flat) and the content scrolls through it',
         (tester) async {
       await _pump(tester, _innerPortrait, _home());
       expect(tester.takeException(), isNull);

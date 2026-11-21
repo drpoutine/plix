@@ -456,13 +456,26 @@ void main() {
       await _unmount(tester);
     });
 
-    testWidgets('book: every fixed top bar item is left of the spine', (tester) async {
+    // A no-regression check, not proof of fold handling: the bar's content is
+    // fixed and short, so it ends well left of the middle when flat as well.
+    testWidgets('book: the short fixed top bar ends left of the spine, exactly as when flat', (tester) async {
+      Map<String, Rect> bar() => {
+            'back button': tester.getRect(find.byType(PlixBackButton)),
+            'home button': tester.getRect(find.byType(PlixHomeButton)),
+            'title': tester.getRect(find.text('Watchlist').first),
+            'count': tester.getRect(find.text('40')),
+          };
+      await _pump(tester, _innerLandscape, DuoPosture.fullyOpen, _watchlist());
+      final flat = bar();
+      await _unmount(tester);
+
       await _pump(tester, _innerLandscape, DuoPosture.book, _watchlist());
       final band = _band(tester);
-      _expectClearOfSpine(tester.getRect(find.byType(PlixBackButton)), band, 'back button');
-      _expectClearOfSpine(tester.getRect(find.byType(PlixHomeButton)), band, 'home button');
-      _expectClearOfSpine(tester.getRect(find.text('Watchlist').first), band, 'title');
-      _expectClearOfSpine(tester.getRect(find.text('40')), band, 'count');
+      final book = bar();
+      book.forEach((what, rect) {
+        expect(rect.right, lessThanOrEqualTo(band.left + 0.01), reason: '$what at $rect is not left of the spine $band');
+      });
+      expect(book, flat);
       await _unmount(tester);
     });
 
@@ -666,7 +679,14 @@ void main() {
 
   group('DownloadsScreen', () {
     setUpAll(_seedDownloads);
-    tearDownAll(() {
+    tearDownAll(() async {
+      // The service is a singleton: empty it again, or groups that expect
+      // nothing downloaded fail whenever they run after this one.
+      for (final task in DownloadService.instance.tasks) {
+        task.status = DownloadStatus.cancelled; // not running, so it is removed directly
+        await DownloadService.instance.deleteDownload(task.ratingKey);
+      }
+      expect(DownloadService.instance.tasks, isEmpty);
       try {
         _downloadDir?.deleteSync(recursive: true);
       } catch (_) {}

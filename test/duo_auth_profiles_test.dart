@@ -18,6 +18,7 @@ import 'package:plix/screens/profiles_screen.dart';
 import 'package:plix/screens/server_select_screen.dart';
 import 'package:plix/screens/splash_screen.dart';
 import 'package:plix/services/iphone_duo_service.dart';
+import 'package:plix/services/plix_device_helper.dart';
 import 'package:plix/services/plex_auth_service.dart';
 import 'package:plix/services/plex_server_service.dart';
 import 'package:plix/services/profile_service.dart';
@@ -161,7 +162,13 @@ typedef _ScreenBuilder = Widget Function();
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUpAll(_loadRoboto);
+  setUpAll(() async {
+    await _loadRoboto();
+    // Until this runs PlixDeviceHelper reports a television, and the screens
+    // would be built in their TV variant instead of what a Duo shows.
+    await PlixDeviceHelper.initDeviceName();
+    expect(PlixDeviceHelper.isTelevision, isFalse, reason: 'the test host must not be treated as a TV');
+  });
 
   late PlexAuthService authService;
   late PlexServerService serverService;

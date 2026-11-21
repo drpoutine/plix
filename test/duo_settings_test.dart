@@ -8,6 +8,7 @@ import 'package:plix/app_theme.dart';
 import 'package:plix/screens/appearance_screen.dart';
 import 'package:plix/screens/settings_screen.dart';
 import 'package:plix/services/iphone_duo_service.dart';
+import 'package:plix/services/plix_device_helper.dart';
 import 'package:plix/services/profile_service.dart';
 import 'package:plix/widgets/appearance_hero_tile.dart';
 import 'package:plix/widgets/duo_fold.dart';
@@ -92,7 +93,13 @@ Finder _within(Type screen, Type type) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUpAll(_loadRoboto);
+  setUpAll(() async {
+    await _loadRoboto();
+    // Until this runs PlixDeviceHelper reports a television, and the screens
+    // would be built in their TV variant instead of what a Duo shows.
+    await PlixDeviceHelper.initDeviceName();
+    expect(PlixDeviceHelper.isTelevision, isFalse, reason: 'the test host must not be treated as a TV');
+  });
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
