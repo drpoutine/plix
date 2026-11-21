@@ -1,14 +1,17 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../app_theme.dart';
 import '../models/plex_media_item.dart';
 import '../models/plex_server.dart';
+import '../services/iphone_duo_service.dart';
 import '../services/native_player_service.dart';
 import '../services/plex_media_service.dart';
 import '../services/plix_device_helper.dart';
+import '../widgets/duo_fold.dart';
 import '../widgets/media_card.dart';
 import '../widgets/plix_back_button.dart';
 import '../widgets/plix_home_button.dart';
@@ -91,6 +94,39 @@ class _SearchScreenState extends State<SearchScreen> {
   final FocusNode _clearButtonFocus = FocusNode();
 
   final List<FocusNode> _resultFocusNodes = [];
+
+  // Set only while the grid is laid out around the book spine.
+  SliverGridLayout? _spineLayout;
+  int? _spineColumns;
+
+  SliverGridDelegate _spineGridDelegate(DuoLocalFold? fold, SliverGridDelegate base, double leftPadding) {
+    if (fold == null || !fold.isBook) {
+      _spineLayout = null;
+      _spineColumns = null;
+      return base;
+    }
+    return _RecordingGridDelegate(
+      inner: DuoSpineGridDelegate(base: base, fold: fold, crossAxisInset: leftPadding),
+      onLayout: (layout) {
+        var columns = 1;
+        while (columns < 64 && layout.getGeometryForChildIndex(columns).scrollOffset <= 0) {
+          columns++;
+        }
+        _spineLayout = layout;
+        _spineColumns = columns;
+      },
+    );
+  }
+
+  // Text shifts away from the fold: under the search field in book, the upper
+  // half in tabletop.
+  Widget _awayFromFold(Widget child) {
+    return DuoAvoidFold(
+      side: IPhoneDuoService.isBook(context) ? DuoFoldSide.trailing : DuoFoldSide.leading,
+      avoidTabletop: true,
+      child: child,
+    );
+  }
 
   @override
   void initState() {
@@ -331,7 +367,10 @@ class _SearchScreenState extends State<SearchScreen> {
       return;
     }
     // Each row is approximately 293px tall + 16px spacing = ~309px per row.
-    final targetOffset = row * 310.0;
+    final spineLayout = _spineLayout;
+    final targetOffset = spineLayout != null
+        ? spineLayout.getGeometryForChildIndex(row * (_spineColumns ?? 1)).scrollOffset
+        : row * 310.0;
     final maxScroll = _scrollController.position.maxScrollExtent;
     final clampedOffset = targetOffset.clamp(0.0, maxScroll);
     _scrollController.animateTo(
@@ -463,7 +502,9 @@ class _SearchScreenState extends State<SearchScreen> {
 
           // Search Input Bar
           Expanded(
-            child: AnimatedBuilder(
+            child: DuoAvoidFold(
+              side: DuoFoldSide.trailing,
+              child: AnimatedBuilder(
               animation: _textFieldFocusNode,
               builder: (context, _) {
                 final isFocused = _textFieldFocusNode.hasFocus;
@@ -565,7 +606,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                 );
               },
-            ),
+            )),
           ),
 
           if (!(Platform.isWindows || Platform.isLinux)) ...[
@@ -589,7 +630,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildResultsSection({required bool isCompact}) {
     if (_isSearching) {
-      return Align(
+      return _awayFromFold(Align(
         alignment: const Alignment(0, -0.45),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -604,11 +645,11 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
           ],
         ),
-      );
+      ));
     }
 
     if (_query.trim().isEmpty) {
-      return Align(
+      return _awayFromFold(Align(
         alignment: const Alignment(0, -0.45),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -640,11 +681,11 @@ class _SearchScreenState extends State<SearchScreen> {
             ],
           ),
         ),
-      );
+      ));
     }
 
     if (_results.isEmpty) {
-      return Align(
+      return _awayFromFold(Align(
         alignment: const Alignment(0, -0.45),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -676,31 +717,32 @@ class _SearchScreenState extends State<SearchScreen> {
             ],
           ),
         ),
-      );
+      ));
     }
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final crossAxisCount = isCompact
+        final baseCrossAxisCount = isCompact
             ? (constraints.maxWidth / 115).floor().clamp(3, 7)
             : (constraints.maxWidth / 140).floor().clamp(4, 12);
 
         final gridDelegate = SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: crossAxisCount,
+          crossAxisCount: baseCrossAxisCount,
           crossAxisSpacing: isCompact ? 10 : 14,
           mainAxisSpacing: isCompact ? 12 : 16,
           childAspectRatio: 0.47,
         );
 
-        return GridView.builder(
+        return DuoFoldBuilder(builder: (context, fold) => GridView.builder(
           controller: _scrollController,
           padding: const EdgeInsets.only(top: 20, left: 16, right: 16, bottom: 60),
           clipBehavior: Clip.none,
           cacheExtent: 1500,
           physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-          gridDelegate: gridDelegate,
+          gridDelegate: _spineGridDelegate(fold, gridDelegate, 16),
           itemCount: _results.length,
           itemBuilder: (context, index) {
+            final crossAxisCount = _spineColumns ?? baseCrossAxisCount;
             final item = _results[index];
             final focusNode = (index < _resultFocusNodes.length)
                 ? _resultFocusNodes[index]
@@ -785,9 +827,30 @@ class _SearchScreenState extends State<SearchScreen> {
               },
             );
           },
-        );
+        ));
       },
     );
+  }
+}
+
+/// Reports each layout the wrapped delegate produces, so focus and scroll
+/// maths can follow the real tile positions.
+class _RecordingGridDelegate extends SliverGridDelegate {
+  final SliverGridDelegate inner;
+  final ValueChanged<SliverGridLayout> onLayout;
+
+  const _RecordingGridDelegate({required this.inner, required this.onLayout});
+
+  @override
+  SliverGridLayout getLayout(SliverConstraints constraints) {
+    final layout = inner.getLayout(constraints);
+    onLayout(layout);
+    return layout;
+  }
+
+  @override
+  bool shouldRelayout(_RecordingGridDelegate oldDelegate) {
+    return oldDelegate.inner.runtimeType != inner.runtimeType || inner.shouldRelayout(oldDelegate.inner);
   }
 }
 

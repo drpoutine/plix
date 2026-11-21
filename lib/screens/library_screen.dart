@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import '../app_theme.dart';
 import '../models/plex_library.dart';
@@ -8,8 +9,10 @@ import '../models/plex_server.dart';
 import '../services/plex_media_service.dart';
 import '../services/plex_auth_service.dart';
 import '../services/plex_server_service.dart';
+import '../services/iphone_duo_service.dart';
 import '../services/plix_device_helper.dart';
 import '../services/plix_image_cache.dart';
+import '../widgets/duo_fold.dart';
 import '../widgets/media_card.dart';
 import '../widgets/plix_bottom_nav.dart';
 import 'details_screen.dart';
@@ -95,6 +98,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
   ];
   final Map<String, FocusNode> _alphabetFocusNodes = {};
   String? _activeAlphabetLetter;
+  // Set only while the grid is laid out around the book spine.
+  SliverGridLayout? _spineLayout;
+  int? _spineColumns;
 
   @override
   void initState() {
@@ -145,8 +151,31 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return (available / (148 + 16)).ceil();
   }
 
+  int _gridColumns(BuildContext context, bool isCompact) {
+    return _spineColumns ?? _gridCrossAxisCount(context, isCompact);
+  }
+
+  SliverGridDelegate _spineGridDelegate(DuoLocalFold? fold, SliverGridDelegate base, double leftPadding) {
+    if (fold == null || !fold.isBook) {
+      _spineLayout = null;
+      _spineColumns = null;
+      return base;
+    }
+    return _RecordingGridDelegate(
+      inner: DuoSpineGridDelegate(base: base, fold: fold, crossAxisInset: leftPadding),
+      onLayout: (layout) {
+        var columns = 1;
+        while (columns < 64 && layout.getGeometryForChildIndex(columns).scrollOffset <= 0) {
+          columns++;
+        }
+        _spineLayout = layout;
+        _spineColumns = columns;
+      },
+    );
+  }
+
   int _firstRowItemCount(bool isCompact) {
-    return _gridCrossAxisCount(context, isCompact);
+    return _gridColumns(context, isCompact);
   }
 
   static String _getItemLetter(PlexMediaItem item) {
@@ -197,16 +226,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (targetIndex == null) return;
 
     final isCompact = PlixDeviceHelper.isCompact(context);
-    final cols = _gridCrossAxisCount(context, isCompact);
+    final cols = _gridColumns(context, isCompact);
     final rowHeight = _calculateRowHeight(context, isCompact);
     final rowIndex = targetIndex ~/ cols;
+    final spineLayout = _spineLayout;
+    final rowOffset = spineLayout != null
+        ? spineLayout.getGeometryForChildIndex(targetIndex).scrollOffset
+        : rowIndex * rowHeight;
     final topPadding = _selectedCategory != null
         ? (isCompact ? 54.0 : 68.0)
         : (isCompact ? 14.0 : 20.0);
     final maxScroll = _gridScrollController.hasClients
         ? _gridScrollController.position.maxScrollExtent
         : double.infinity;
-    final targetOffset = (topPadding + (rowIndex * rowHeight)).clamp(0.0, maxScroll);
+    final targetOffset = (topPadding + rowOffset).clamp(0.0, maxScroll);
 
     if (_gridScrollController.hasClients) {
       _gridScrollController.jumpTo(targetOffset);
@@ -523,7 +556,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
             tooltip: 'Back',
             onPressed: () => Navigator.of(context).maybePop(),
           ),
-        title: Text(widget.library.title),
+        title: IPhoneDuoService.isBook(context)
+            ? DuoAvoidFold(child: Text(widget.library.title))
+            : Text(widget.library.title),
         actions: [
           IconButton(
             focusNode: _categoriesButtonFocusNode,
@@ -557,30 +592,36 @@ class _LibraryScreenState extends State<LibraryScreen> {
             )
           : null,
       body: _isLoading
-          ? Center(
+          ? DuoAvoidFold(
+              avoidTabletop: true,
+              child: Center(
               child: CircularProgressIndicator(
                 valueColor: AlwaysStoppedAnimation<Color>(PlixTheme.plexGold),
               ),
-            )
+            ))
           : _errorMessage != null
-              ? Center(
+              ? DuoAvoidFold(
+                  avoidTabletop: true,
+                  child: Center(
                   child: Text(
                     _errorMessage!,
                     style: const TextStyle(color: Colors.redAccent),
                   ),
-                )
+                ))
               : _items.isEmpty
-                  ? const Center(
+                  ? const DuoAvoidFold(
+                      avoidTabletop: true,
+                      child: Center(
                       child: Text(
                         'No media found in this library.',
                         style: TextStyle(color: PlixTheme.textSecondary, fontSize: 16),
                       ),
-                    )
+                    ))
                   : Stack(
                       children: [
                         Positioned.fill(
                           right: isCompact ? 34.0 : 50.0,
-                          child: CustomScrollView(
+                          child: DuoFoldBuilder(builder: (context, fold) => CustomScrollView(
                             controller: _gridScrollController,
                             cacheExtent: 150.0,
                             clipBehavior: Clip.none,
@@ -641,16 +682,16 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                   bottom: isCompact ? 24 : 140,
                                 ),
                                 sliver: SliverGrid(
-                                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                  gridDelegate: _spineGridDelegate(fold, SliverGridDelegateWithFixedCrossAxisCount(
                                     crossAxisCount: _gridCrossAxisCount(context, isCompact),
                                     crossAxisSpacing: isCompact ? 10 : 16,
                                     mainAxisSpacing: isCompact ? 12 : 18,
                                     childAspectRatio: isCompact ? 0.51 : 0.52,
-                                  ),
+                                  ), isCompact ? 14 : 24),
                                   delegate: SliverChildBuilderDelegate(
                                     (context, index) {
                                       final item = _items[index];
-                                      final cols = _gridCrossAxisCount(context, isCompact);
+                                      final cols = _gridColumns(context, isCompact);
                                       final isRightEdge = ((index + 1) % cols == 0) || (index == _items.length - 1);
                                       return LayoutBuilder(
                                         builder: (context, constraints) {
@@ -677,7 +718,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                                 ),
                               ),
                             ],
-                          ),
+                          )),
                         ),
                         Positioned(
                           top: isCompact ? 6 : 10,
@@ -699,6 +740,41 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final isShort = mediaQuery.size.height < 550;
     final needsScroll = isLandscape || isShort;
 
+    Widget letterButton(int i) {
+      return _AlphabetLetterButton(
+        letter: _alphabetLetters[i],
+        hasItems: availableLetters.contains(_alphabetLetters[i]),
+        focusNode: _alphabetFocusNodes[_alphabetLetters[i]]!,
+        isCompact: isCompact,
+        blockDown: i == _alphabetLetters.length - 1,
+        onUp: i == 0
+            ? () {
+                setState(() => _activeAlphabetLetter = null);
+                _categoriesButtonFocusNode.requestFocus();
+              }
+            : null,
+        onFocus: (letter) {
+          setState(() => _activeAlphabetLetter = letter);
+        },
+        onLeft: _returnFocusToGrid,
+        onSelect: (letter) {
+          _jumpToLetter(letter);
+        },
+      );
+    }
+
+    Widget letterColumn(int from, int to) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          for (int i = from; i < to; i++)
+            Expanded(
+              child: letterButton(i),
+            ),
+        ],
+      );
+    }
+
     final railContent = needsScroll
         ? SingleChildScrollView(
             controller: _alphabetScrollController,
@@ -710,26 +786,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 for (int i = 0; i < _alphabetLetters.length; i++)
                   SizedBox(
                     height: 28,
-                    child: _AlphabetLetterButton(
-                      letter: _alphabetLetters[i],
-                      hasItems: availableLetters.contains(_alphabetLetters[i]),
-                      focusNode: _alphabetFocusNodes[_alphabetLetters[i]]!,
-                      isCompact: isCompact,
-                      blockDown: i == _alphabetLetters.length - 1,
-                      onUp: i == 0
-                          ? () {
-                              setState(() => _activeAlphabetLetter = null);
-                              _categoriesButtonFocusNode.requestFocus();
-                            }
-                          : null,
-                      onFocus: (letter) {
-                        setState(() => _activeAlphabetLetter = letter);
-                      },
-                      onLeft: _returnFocusToGrid,
-                      onSelect: (letter) {
-                        _jumpToLetter(letter);
-                      },
-                    ),
+                    child: letterButton(i),
                   ),
               ],
             ),
@@ -750,33 +807,24 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 }
               }
             },
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                for (int i = 0; i < _alphabetLetters.length; i++)
-                  Expanded(
-                    child: _AlphabetLetterButton(
-                      letter: _alphabetLetters[i],
-                      hasItems: availableLetters.contains(_alphabetLetters[i]),
-                      focusNode: _alphabetFocusNodes[_alphabetLetters[i]]!,
-                      isCompact: isCompact,
-                      blockDown: i == _alphabetLetters.length - 1,
-                      onUp: i == 0
-                          ? () {
-                              setState(() => _activeAlphabetLetter = null);
-                              _categoriesButtonFocusNode.requestFocus();
-                            }
-                          : null,
-                      onFocus: (letter) {
-                        setState(() => _activeAlphabetLetter = letter);
-                      },
-                      onLeft: _returnFocusToGrid,
-                      onSelect: (letter) {
-                        _jumpToLetter(letter);
-                      },
-                    ),
-                  ),
-              ],
+            child: DuoFoldBuilder(
+              builder: (context, fold) {
+                final count = _alphabetLetters.length;
+                if (fold == null || !fold.isTabletop || !fold.intersects) {
+                  return letterColumn(0, count);
+                }
+                // Tabletop: leave the fold band empty and share the letters
+                // between the two halves in proportion to their height.
+                final below = fold.size.height - fold.end;
+                final above = (count * fold.start / (fold.start + below)).round().clamp(1, count - 1);
+                return Column(
+                  children: [
+                    SizedBox(height: fold.start, child: letterColumn(0, above)),
+                    SizedBox(height: fold.end - fold.start),
+                    Expanded(child: letterColumn(above, count)),
+                  ],
+                );
+              },
             ),
           );
 
@@ -812,7 +860,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
       right: isCompact ? 40 : 54,
       top: 0,
       bottom: isCompact ? 6 : 8,
-      child: Center(
+      child: DuoAvoidFold(
+        avoidTabletop: true,
+        child: Center(
         child: Container(
           width: 60,
           height: 60,
@@ -846,8 +896,29 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ),
           ),
         ),
-      ),
+      )),
     );
+  }
+}
+
+/// Reports each layout the wrapped delegate produces, so focus and scroll
+/// maths can follow the real tile positions.
+class _RecordingGridDelegate extends SliverGridDelegate {
+  final SliverGridDelegate inner;
+  final ValueChanged<SliverGridLayout> onLayout;
+
+  const _RecordingGridDelegate({required this.inner, required this.onLayout});
+
+  @override
+  SliverGridLayout getLayout(SliverConstraints constraints) {
+    final layout = inner.getLayout(constraints);
+    onLayout(layout);
+    return layout;
+  }
+
+  @override
+  bool shouldRelayout(_RecordingGridDelegate oldDelegate) {
+    return oldDelegate.inner.runtimeType != inner.runtimeType || inner.shouldRelayout(oldDelegate.inner);
   }
 }
 
