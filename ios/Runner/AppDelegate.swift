@@ -13,15 +13,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   ) {
     guard let windowScene = scene as? UIWindowScene else { return }
 
-    DispatchQueue.main.async { [weak self] in
-      let controller = (self?.window?.rootViewController as? FlutterViewController)
-        ?? (windowScene.windows.compactMap { $0.rootViewController as? FlutterViewController }.first)
-        ?? (UIApplication.shared.windows.compactMap { $0.rootViewController as? FlutterViewController }.first)
+    guard let appDelegate = UIApplication.shared.delegate as? AppDelegate else { return }
+    let engine = appDelegate.ensureEngineRunning()
 
-      if let controller = controller, let appDelegate = UIApplication.shared.delegate as? AppDelegate {
-        appDelegate.configureFlutterViewController(controller)
-      }
-    }
+    let controller = FlutterViewController(engine: engine, nibName: nil, bundle: nil)
+    let window = UIWindow(windowScene: windowScene)
+    window.rootViewController = controller
+    self.window = window
+    appDelegate.window = window
+    window.makeKeyAndVisible()
+
+    appDelegate.configureFlutterViewController(controller)
   }
 
   func sceneDidBecomeActive(_ scene: UIScene) {
@@ -33,6 +35,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
+  lazy var flutterEngine = FlutterEngine(name: "plix_flutter_engine")
+  private var isEngineRunning = false
   private var channel: FlutterMethodChannel?
 
   // iPhone Duo state. See "iPhone Duo support" below.
@@ -45,15 +49,30 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   private var duoPublishScheduled = false
   private var lastDuoInfo: NSDictionary?
   private var isConfigured = false
+  weak var activeController: FlutterViewController?
+
+  @discardableResult
+  func ensureEngineRunning() -> FlutterEngine {
+    if !isEngineRunning {
+      isEngineRunning = true
+      flutterEngine.run()
+      GeneratedPluginRegistrant.register(with: flutterEngine)
+    }
+    return flutterEngine
+  }
 
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    GeneratedPluginRegistrant.register(with: self)
+    _ = ensureEngineRunning()
     setupAudioSession()
 
-    if let controller = window?.rootViewController as? FlutterViewController {
+    // Non-scene fallback (older iOS or legacy window environments)
+    if let window = self.window {
+      let controller = FlutterViewController(engine: flutterEngine, nibName: nil, bundle: nil)
+      window.rootViewController = controller
+      window.makeKeyAndVisible()
       configureFlutterViewController(controller)
     }
 
@@ -72,7 +91,13 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   }
 
   func configureFlutterViewController(_ controller: FlutterViewController) {
-    guard !isConfigured else { return }
+    self.activeController = controller
+    guard !isConfigured else {
+      // A replacement controller on the same engine: move the hinge and
+      // layout observation to its view.
+      attachDuoObservation(to: controller)
+      return
+    }
     isConfigured = true
 
     controller.isViewOpaque = false
@@ -161,8 +186,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   private var isIphoneDuo: Bool { isDuoModel || duoHingeSeen }
 
   private func setupDuoSupport(controller: FlutterViewController) {
-    duoController = controller
-
     let duo = FlutterMethodChannel(name: "com.plix.plix/duo", binaryMessenger: controller.binaryMessenger)
     duoChannel = duo
     duo.setMethodCallHandler { [weak self] (call: FlutterMethodCall, result: @escaping FlutterResult) in
@@ -179,6 +202,28 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         result(FlutterMethodNotImplemented)
       }
     }
+
+    attachDuoObservation(to: controller)
+
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleDuoEnvironmentChange),
+      name: UIApplication.didBecomeActiveNotification,
+      object: nil
+    )
+
+    // With the scene lifecycle this can run after Dart has already asked for
+    // the info and found no handler, so the first state is always pushed.
+    scheduleDuoPublish()
+  }
+
+  /// Observes the hinge and layout of `controller`'s view. Safe to call again
+  /// with a different controller.
+  private func attachDuoObservation(to controller: FlutterViewController) {
+    if duoController === controller { return }
+    duoController = controller
+    duoProbe?.removeFromSuperview()
+    duoProbe = nil
 
     #if compiler(>=6.4)
     if #available(iOS 27.1, *) {
@@ -210,16 +255,6 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     #endif
 
     installDuoLayoutProbeIfNeeded()
-
-    NotificationCenter.default.addObserver(
-      self,
-      selector: #selector(handleDuoEnvironmentChange),
-      name: UIApplication.didBecomeActiveNotification,
-      object: nil
-    )
-
-    // With the scene lifecycle this can run after Dart has already asked for
-    // the info and found no handler, so the first state is always pushed.
     scheduleDuoPublish()
   }
 
