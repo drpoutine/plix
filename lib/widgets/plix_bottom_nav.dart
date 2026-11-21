@@ -111,7 +111,7 @@ class PlixBottomNav extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      anchorPoint: IPhoneDuoService.sheetAnchor,
+      anchorPoint: IPhoneDuoService.sheetAnchorOf(context),
       backgroundColor: PlixTheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),

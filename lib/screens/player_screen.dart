@@ -8044,12 +8044,11 @@ void _showSubtitleSelector() {
 
   // Sheets and dialogs open beside the controls, never over the picture.
   // Null off the Duo so other devices with display features are unaffected.
-  Offset? get _sheetAnchor =>
-      IPhoneDuoService.foldOf(context) != null ? IPhoneDuoService.controlsAnchor : null;
+  Offset? get _sheetAnchor => IPhoneDuoService.controlsAnchorOf(context);
 
   // A sheet confined to one half of the fold may use most of that half.
   double get _sheetMaxHeightRatio =>
-      IPhoneDuoService.foldOf(context) != null ? 0.9 : 9.0 / 16.0;
+      IPhoneDuoService.controlsSheetHeightRatioOf(context);
 
   Widget _buildDuoTabletopLayout(BuildContext context, double progressMs, double maxMs) =>
       _buildDuoLayout(context, progressMs, maxMs, book: false);

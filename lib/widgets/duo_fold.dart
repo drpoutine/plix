@@ -130,6 +130,11 @@ class _DuoFoldBuilderState extends State<DuoFoldBuilder> {
   Size? _size;
   bool _measureScheduled = false;
 
+  // The fold the measurement was taken for, and the one currently in effect.
+  // A measurement from another pose or view size is never reused.
+  DuoFold? _measuredFor;
+  DuoFold? _currentFold;
+
   // Keeps the State below the builder (scroll offsets, text fields) alive
   // when the wrappers around it appear and disappear with the fold.
   final GlobalKey _subtreeKey = GlobalKey();
@@ -142,9 +147,17 @@ class _DuoFoldBuilderState extends State<DuoFoldBuilder> {
       if (!mounted) return;
       final box = context.findRenderObject();
       if (box is! RenderBox || !box.hasSize || !box.attached) return;
-      final origin = box.localToGlobal(Offset.zero);
+      // Measured against the enclosing route, not the view: a route that is
+      // covered or mid-transition is translated on iOS, and that offset must
+      // not leak into the fold position.
+      final routeBox = ModalRoute.of(context)?.subtreeContext?.findRenderObject();
+      final origin = box.localToGlobal(
+        Offset.zero,
+        ancestor: routeBox is RenderBox && routeBox.attached ? routeBox : null,
+      );
       final size = box.size;
-      final moved = _origin == null ||
+      final moved = _measuredFor != _currentFold ||
+          _origin == null ||
           (origin - _origin!).distance > 0.5 ||
           _size == null ||
           (size.width - _size!.width).abs() > 0.5 ||
@@ -153,6 +166,7 @@ class _DuoFoldBuilderState extends State<DuoFoldBuilder> {
         setState(() {
           _origin = origin;
           _size = size;
+          _measuredFor = _currentFold;
         });
       }
     });
@@ -164,10 +178,17 @@ class _DuoFoldBuilderState extends State<DuoFoldBuilder> {
     if (fold == null) {
       _origin = null;
       _size = null;
+      _measuredFor = null;
+      _currentFold = null;
       return KeyedSubtree(key: _subtreeKey, child: widget.builder(context, null));
     }
     // The position can change without a rebuild of this widget (a sibling
     // resizing), so it is re-measured after every build while folded.
+    _currentFold = fold;
+    if (_measuredFor != fold) {
+      _origin = null;
+      _size = null;
+    }
     _scheduleMeasure();
     DuoLocalFold? local;
     final origin = _origin;
@@ -232,6 +253,8 @@ class DuoAvoidFold extends StatefulWidget {
 }
 
 class _DuoAvoidFoldState extends State<DuoAvoidFold> {
+  static const double minExtent = 72.0;
+
   // The child keeps its State while the padding around it comes and goes.
   final GlobalKey _childKey = GlobalKey();
 
@@ -249,13 +272,28 @@ class _DuoAvoidFoldState extends State<DuoAvoidFold> {
     return DuoFoldBuilder(
       builder: (context, fold) {
         if (fold == null || !fold.intersects) return child;
+        // A side too small to be useful is not worth confining to: use the
+        // other one, or leave the child alone.
+        final total = fold.isBook ? fold.size.width : fold.size.height;
+        final leadingRoom = fold.start;
+        final trailingRoom = total - fold.end;
+        var side = widget.side;
+        final room = side == DuoFoldSide.leading ? leadingRoom : trailingRoom;
+        final otherRoom =
+            side == DuoFoldSide.leading ? trailingRoom : leadingRoom;
+        if (room < minExtent) {
+          if (otherRoom < minExtent) return child;
+          side = side == DuoFoldSide.leading
+              ? DuoFoldSide.trailing
+              : DuoFoldSide.leading;
+        }
         final EdgeInsets padding;
         if (fold.isBook) {
-          padding = widget.side == DuoFoldSide.leading
+          padding = side == DuoFoldSide.leading
               ? EdgeInsets.only(right: fold.size.width - fold.start)
               : EdgeInsets.only(left: fold.end);
         } else {
-          padding = widget.side == DuoFoldSide.leading
+          padding = side == DuoFoldSide.leading
               ? EdgeInsets.only(bottom: fold.size.height - fold.start)
               : EdgeInsets.only(top: fold.end);
         }

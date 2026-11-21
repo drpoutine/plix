@@ -337,6 +337,20 @@ class IPhoneDuoService {
   static const Offset controlsAnchor =
       Offset(double.maxFinite, double.maxFinite);
 
+  /// [controlsAnchor] while half folded, null otherwise, so that routes on
+  /// every other device (Android foldables included) keep Flutter's default.
+  static Offset? controlsAnchorOf(BuildContext context) =>
+      foldOf(context) != null ? controlsAnchor : null;
+
+  /// [sheetAnchor] while half folded, null otherwise.
+  static Offset? sheetAnchorOf(BuildContext context) =>
+      foldOf(context) != null ? sheetAnchor : null;
+
+  /// How much of the available height a non-scroll-controlled sheet may use:
+  /// most of its half while folded, Flutter's default (9/16) otherwise.
+  static double controlsSheetHeightRatioOf(BuildContext context) =>
+      foldOf(context) != null ? 0.9 : 9.0 / 16.0;
+
   static Future<IPhoneDuoInfo> init() async {
     if (!Platform.isIOS) return currentInfo;
     _channel.setMethodCallHandler(_handleNativeCall);
