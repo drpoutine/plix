@@ -43,6 +43,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   private var duoChannel: FlutterMethodChannel?
   private weak var duoController: FlutterViewController?
   private weak var duoProbe: UIView?
+  private var duoInteraction: UIInteraction?
   private var duoHingeSeen = false
   private var duoHingeStatus = "unknown"
   private var duoHingeAngle = 0.0
@@ -211,6 +212,12 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
       name: UIApplication.didBecomeActiveNotification,
       object: nil
     )
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleDuoEnvironmentChange),
+      name: UIDevice.orientationDidChangeNotification,
+      object: nil
+    )
 
     // With the scene lifecycle this can run after Dart has already asked for
     // the info and found no handler, so the first state is always pushed.
@@ -221,6 +228,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   /// with a different controller.
   private func attachDuoObservation(to controller: FlutterViewController) {
     if duoController === controller { return }
+    if let old = duoInteraction {
+      old.view?.removeInteraction(old)
+      duoInteraction = nil
+    }
     duoController = controller
     duoProbe?.removeFromSuperview()
     duoProbe = nil
@@ -248,9 +259,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
           }
           self.installDuoLayoutProbeIfNeeded()
           self.scheduleDuoPublish()
+          // The fold region turns active up to about a second after the
+          // hinge comes to rest, and nothing announces it.
+          DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            self?.scheduleDuoPublish()
+          }
         }
       }
       controller.view.addInteraction(interaction)
+      duoInteraction = interaction
     }
     #endif
 
