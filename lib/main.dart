@@ -2,6 +2,7 @@ import 'services/guest_mode_service.dart';
 import 'services/download_service.dart';
 import 'services/custom_avatar_service.dart';
 import 'services/iphone_duo_service.dart';
+import 'widgets/duo_fold.dart';
 import 'services/ratings_service.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -94,10 +95,12 @@ class PlixApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           theme: PlixTheme.themeData,
           builder: (context, child) {
-            return _SystemUiOrientationWatcher(
-              authService: authService,
-              serverService: serverService,
-              child: child ?? const SizedBox.shrink(),
+            return DuoScope(
+              child: _SystemUiOrientationWatcher(
+                authService: authService,
+                serverService: serverService,
+                child: child ?? const SizedBox.shrink(),
+              ),
             );
           },
           home: SplashScreen(
